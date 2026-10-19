@@ -229,8 +229,8 @@ impl RnPenPicker {
     }
 
     /// Applies the button layout: reorders the listed ids into the toolbox
-    /// (and the separator between the pen toggles and undo/redo), hides the
-    /// buttons that are not listed.
+    /// in exactly the saved order (and the separator between the pen toggles
+    /// and undo/redo), hides the buttons that are not listed.
     pub(crate) fn apply_layout(&self, ids: &[String]) {
         let imp = self.imp();
         let toolbox = imp.toolbox.get();
@@ -249,10 +249,27 @@ impl RnPenPicker {
             toolbox.append(widget);
         };
 
+        let any_undo_redo_visible = ids
+            .iter()
+            .any(|id| id == "undo" || id == "redo");
+
+        // Append the listed buttons in exactly the saved order, inserting
+        // the separator right before the first visible undo/redo button.
         let mut any_pen_toggle_visible = false;
-        let mut any_undo_redo_visible = false;
+        let mut separator_placed = false;
+        let separator = imp.separator.get();
 
         for id in ids {
+            if (id == "undo" || id == "redo")
+                && !separator_placed
+                && any_pen_toggle_visible
+                && any_undo_redo_visible
+            {
+                separator.set_visible(true);
+                move_into_toolbox(separator.upcast_ref());
+                separator_placed = true;
+            }
+
             let Some(widget) = self.widget_for_id(id) else {
                 continue;
             };
@@ -260,26 +277,16 @@ impl RnPenPicker {
             move_into_toolbox(&widget);
 
             match id.as_str() {
-                "undo" | "redo" => any_undo_redo_visible = true,
+                "undo" | "redo" => {}
                 _ => any_pen_toggle_visible = true,
             }
         }
 
-        // The separator goes after the last visible pen toggle, before the
-        // first visible undo/redo; it is hidden when either side is empty.
-        let separator = imp.separator.get();
-        separator.set_visible(any_pen_toggle_visible && any_undo_redo_visible);
-        move_into_toolbox(separator.upcast_ref());
-        toolbox.reorder_child_after(&separator, None::<&Widget>);
-
-        // Re-append the undo/redo buttons after the separator.
-        for id in ids {
-            if (id == "undo" || id == "redo")
-                && let Some(widget) = self.widget_for_id(id)
-            {
-                move_into_toolbox(&widget);
-                toolbox.reorder_child_after(&widget, Some(&separator));
-            }
+        // Hidden when either side is empty (or all visible buttons are on
+        // one side of it).
+        if !separator_placed {
+            separator.set_visible(false);
+            move_into_toolbox(separator.upcast_ref());
         }
     }
 

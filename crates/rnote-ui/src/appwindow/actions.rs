@@ -558,10 +558,13 @@ impl RnAppWindow {
             #[weak(rename_to=appwindow)]
             self,
             move |_, _| {
+                tracing::debug!("action selection-group activated");
                 let Some(canvas) = appwindow.active_tab_canvas() else {
+                    tracing::debug!("selection-group: no active tab canvas");
                     return;
                 };
                 let widget_flags = canvas.engine_mut().group_selection();
+                tracing::debug!("selection-group widget_flags: {widget_flags:?}");
                 appwindow.handle_widget_flags(widget_flags, &canvas);
             }
         ));
@@ -571,10 +574,12 @@ impl RnAppWindow {
             #[weak(rename_to=appwindow)]
             self,
             move |_, _| {
+                tracing::debug!("action selection-ungroup activated");
                 let Some(canvas) = appwindow.active_tab_canvas() else {
                     return;
                 };
                 let widget_flags = canvas.engine_mut().ungroup_selection();
+                tracing::debug!("selection-ungroup widget_flags: {widget_flags:?}");
                 appwindow.handle_widget_flags(widget_flags, &canvas);
             }
         ));

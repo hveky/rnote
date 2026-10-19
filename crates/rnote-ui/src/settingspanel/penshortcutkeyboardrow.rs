@@ -109,9 +109,12 @@ mod imp {
                     #[upgrade_or]
                     None,
                     move |_| {
+                        // Emit row-changed BEFORE overwriting the saved binding,
+                        // so consumers read the previous binding as old_binding
+                        // and can remove it from the config.
+                        row.emit_by_name::<()>("row-changed", &[]);
                         *row.imp().binding.borrow_mut() =
                             row.imp().keybinding_button.get().binding();
-                        row.emit_by_name::<()>("row-changed", &[]);
                         None
                     }
                 ));

@@ -97,8 +97,15 @@ impl Selector {
                                 .unwrap_or(false)
                         {
                             // Adding a group member selects the whole group.
-                            let keys_to_add =
-                                engine_view.store.expand_hit_to_group(key_to_add.unwrap());
+                            // Filter out members that are already selected so
+                            // keys stay unique (duplicates would transform
+                            // strokes twice).
+                            let keys_to_add = engine_view
+                                .store
+                                .expand_hit_to_group(key_to_add.unwrap())
+                                .into_iter()
+                                .filter(|&k| !selection.contains(&k))
+                                .collect::<Vec<StrokeKey>>();
                             engine_view.store.set_selected_keys(&keys_to_add, true);
                             selection.extend(keys_to_add);
                             if let Some(new_bounds) =
@@ -182,8 +189,15 @@ impl Selector {
                             // defer the [SelectorStyle::Single] after checking whether we are
                             // clicking on a selection node.
                             // Adding a group member selects the whole group.
-                            let keys_to_add =
-                                engine_view.store.expand_hit_to_group(key_to_add.unwrap());
+                            // Filter out members that are already selected so
+                            // keys stay unique (duplicates would transform
+                            // strokes twice).
+                            let keys_to_add = engine_view
+                                .store
+                                .expand_hit_to_group(key_to_add.unwrap())
+                                .into_iter()
+                                .filter(|&k| !selection.contains(&k))
+                                .collect::<Vec<StrokeKey>>();
                             engine_view.store.set_selected_keys(&keys_to_add, true);
                             selection.extend(keys_to_add);
                             if let Some(new_bounds) =
@@ -444,10 +458,39 @@ impl Selector {
                             && let Some(last) = path.last()
                         {
                             let aabb = Aabb::new_positive(first.pos, last.pos);
-                            engine_view.store.strokes_hitboxes_contained_in_aabb(
-                                aabb,
-                                engine_view.camera.viewport(),
-                            )
+                            let hits = engine_view
+                                .store
+                                .strokes_hitboxes_contained_in_aabb(
+                                    aabb,
+                                    engine_view.camera.viewport(),
+                                )
+                                .to_vec();
+                            if !hits.is_empty() {
+                                hits
+                            } else {
+                                // A tap without meaningful dragging selects
+                                // the hit stroke (and its whole group), like
+                                // a click in Excalidraw. Use a small screen
+                                // pixel tolerance, as the pointer usually
+                                // jitters between press and release.
+                                const TAP_TOLERANCE_SCREEN_PX: f64 = 4.0;
+                                let tolerance =
+                                    TAP_TOLERANCE_SCREEN_PX / engine_view.camera.total_zoom();
+                                let drag_dist = (first.pos - last.pos).length();
+                                if drag_dist <= tolerance
+                                    && let Some(key) = engine_view
+                                        .store
+                                        .stroke_hitboxes_contain_coord(
+                                            engine_view.camera.viewport(),
+                                            last.pos,
+                                        )
+                                        .pop()
+                                {
+                                    engine_view.store.expand_hit_to_group(key)
+                                } else {
+                                    vec![]
+                                }
+                            }
                         } else {
                             vec![]
                         }

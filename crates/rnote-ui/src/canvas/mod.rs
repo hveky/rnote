@@ -13,9 +13,9 @@ use crate::{RnAppWindow, config, env};
 use futures::StreamExt;
 use gettextrs::gettext;
 use gtk4::{
-    Adjustment, DropTarget, EventControllerKey, EventControllerLegacy, IMMulticontext,
-    PropagationPhase, Scrollable, ScrollablePolicy, ScrolledWindow, Widget, gdk, gio, glib,
-    glib::clone, graphene, prelude::*, subclass::prelude::*,
+    Adjustment, DropTarget, EventControllerFocus, EventControllerKey, EventControllerLegacy,
+    IMMulticontext, PropagationPhase, Scrollable, ScrollablePolicy, ScrolledWindow, Widget, gdk,
+    gio, glib, glib::clone, graphene, prelude::*, subclass::prelude::*,
 };
 use notify::EventKind;
 use notify::event::{AccessKind, AccessMode, ModifyKind, RenameMode};
@@ -561,6 +561,22 @@ mod imp {
                     super::input::handle_key_controller_key_released(&canvas, key, modifier)
                 }
             ));
+
+            // Clear a stuck space-pan state when the canvas loses focus
+            // (e.g. space held while switching apps: the release event never
+            // arrives here).
+            let focus_controller = EventControllerFocus::new();
+            focus_controller.connect_leave(clone!(
+                #[weak(rename_to=canvas)]
+                obj,
+                move |_| {
+                    if canvas.space_panning() {
+                        canvas.set_space_panning(false);
+                        canvas.set_cursor_from_name(None);
+                    }
+                }
+            ));
+            obj.add_controller(focus_controller);
         }
 
         fn set_hadjustment_prop(&self, hadj: Option<Adjustment>) {

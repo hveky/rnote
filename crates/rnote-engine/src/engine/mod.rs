@@ -837,9 +837,11 @@ impl Engine {
             return WidgetFlags::default();
         }
         self.store.group_keys(&selection_keys);
-        self.current_pen_update_state()
+        let mut widget_flags = self.current_pen_update_state()
             | self.record(Instant::now())
-            | self.update_rendering_current_viewport()
+            | self.update_rendering_current_viewport();
+        widget_flags.store_modified = true;
+        widget_flags
     }
 
     /// Removes the group membership of the currently selected strokes.
@@ -849,9 +851,11 @@ impl Engine {
             return WidgetFlags::default();
         }
         self.store.ungroup_keys(&selection_keys);
-        self.current_pen_update_state()
+        let mut widget_flags = self.current_pen_update_state()
             | self.record(Instant::now())
-            | self.update_rendering_current_viewport()
+            | self.update_rendering_current_viewport();
+        widget_flags.store_modified = true;
+        widget_flags
     }
 
     pub fn nothing_selected(&self) -> bool {

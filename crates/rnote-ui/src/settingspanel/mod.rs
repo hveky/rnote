@@ -9,6 +9,7 @@ mod penshortcutrow;
 pub(crate) use penmoderow::RnPenModeRow;
 pub(crate) use penshortcutkeyboardrow::RnKeyboardShortcutRow;
 pub(crate) use penshortcutrow::RnPenShortcutRow;
+use itertools::Itertools;
 use rnote_compose::ext::Vector2Ext;
 
 // Imports
@@ -710,6 +711,12 @@ impl RnSettingsPanel {
                     .collect();
                 let ids = crate::penpicker::sanitize_penpicker_ids(ids);
 
+                // Rebuild from scratch: drop previous rows (and their stale
+                // captured ids/callbacks) first.
+                while let Some(child) = imp.bottom_toolbar_buttons_list.get().first_child() {
+                    imp.bottom_toolbar_buttons_list.get().remove(&child);
+                }
+
                 // One row per known button, so that an unchecked (hidden)
                 // button keeps its row and can be re-checked. Visible rows
                 // come first in the saved order, hidden ones after.
@@ -721,8 +728,14 @@ impl RnSettingsPanel {
                 let rows = rows
                     .iter()
                     .filter(|(_, pos)| pos.is_some())
-                    .chain(rows.iter().filter(|(_, pos)| pos.is_none()))
-                    .copied();
+                    .copied()
+                    // Visible rows in the saved order.
+                    .enumerate()
+                    .collect::<Vec<(usize, _)>>()
+                    .into_iter()
+                    .sorted_by_key(|(i, (_, pos))| (*pos, *i))
+                    .map(|(_, (id, pos))| (id, pos))
+                    .chain(rows.iter().filter(|(_, pos)| pos.is_none()).copied());
                 for (id, pos) in rows {
                     let Some(widget) = penpicker.widget_for_id(id) else {
                         continue;
@@ -1646,21 +1659,27 @@ impl RnSettingsPanel {
                 None,
                 move |_values| {
                     let action = penshortcut_keyboard_ctrl_space_row.action();
-                    // Only register when a legacy entry is still present;
-                    // after migration this shortcut lives in KeyboardCustom.
-                    if appwindow
-                        .engine_config()
-                        .read()
-                        .pens_config
+                    let mut write = appwindow.engine_config().write();
+                    let pens_config = &mut write.pens_config;
+                    // After migration the shortcut lives under
+                    // KeyboardCustom(Ctrl+Space); keep the legacy entry in
+                    // sync while it exists, and always update the migrated
+                    // one.
+                    if pens_config
                         .get_shortcut_action(ShortcutKey::KeyboardCtrlSpace)
                         .is_some()
                     {
-                        appwindow
-                            .engine_config()
-                            .write()
-                            .pens_config
-                            .register_shortcut(ShortcutKey::KeyboardCtrlSpace, action);
+                        pens_config.register_shortcut(ShortcutKey::KeyboardCtrlSpace, action);
                     }
+                    let binding = rnote_compose::penevent::KeyBinding {
+                        keyval: rnote_engine::pens::shortcuts::LEGACY_CTRL_SPACE_KEYVAL,
+                        modifiers: rnote_compose::penevent::KeyBinding::MODIFIER_MASK
+                            & gdk::ModifierType::CONTROL_MASK.bits(),
+                    };
+                    pens_config.register_shortcut(
+                        ShortcutKey::KeyboardCustom(binding),
+                        action,
+                    );
                     None
                 }
             ),
