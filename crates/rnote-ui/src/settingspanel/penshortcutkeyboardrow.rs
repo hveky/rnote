@@ -167,10 +167,10 @@ mod imp {
                         let new_builder =
                             SHORTCUT_SHAPE_BUILDERS.get(position as usize).copied();
 
-                        let action_is_switch = matches!(
-                            &*row.imp().action.borrow(),
-                            ShortcutAction::SwitchPenStyle { .. }
-                        );
+                        let action_is_switch = {
+                            let action = row.imp().action.borrow();
+                            matches!(&*action, ShortcutAction::SwitchPenStyle { .. })
+                        };
                         if action_is_switch {
                             if let ShortcutAction::SwitchPenStyle { shape_builder, .. } =
                                 &mut *row.imp().action.borrow_mut()
@@ -273,22 +273,24 @@ impl RnKeyboardShortcutRow {
     }
 
     /// Shows the shape-builder dropdown only for `SwitchPenStyle` actions
-    /// targeting the shaper, and syncs its selection.
+    /// targeting the shaper, and syncs its selection. Reads the values before
+    /// calling `set_selected` — that call fires the notify handler, which
+    /// borrows the action itself.
     fn update_shape_builder_dropdown(&self) {
-        let visible = matches!(
-            &*self.imp().action.borrow(),
-            ShortcutAction::SwitchPenStyle {
-                style: PenStyle::Shaper,
-                ..
+        let (visible, position) = {
+            let action = self.imp().action.borrow();
+            match &*action {
+                ShortcutAction::SwitchPenStyle {
+                    style: PenStyle::Shaper,
+                    shape_builder,
+                    ..
+                } => (true, shape_builder.and_then(|b| shape_builder_position(b))),
+                _ => (false, None),
             }
-        );
+        };
+
         self.imp().shape_builder_dropdown.get().set_visible(visible);
-        if visible
-            && let ShortcutAction::SwitchPenStyle { shape_builder, .. } =
-                &*self.imp().action.borrow()
-            && let Some(builder) = shape_builder
-            && let Some(position) = shape_builder_position(*builder)
-        {
+        if let Some(position) = position {
             self.imp().shape_builder_dropdown.get().set_selected(position);
         }
     }

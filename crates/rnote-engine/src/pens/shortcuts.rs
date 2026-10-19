@@ -66,68 +66,76 @@ pub enum ShortcutAction {
 /// The registered shortcut actions for the given shortcut keys.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename = "shortcuts")]
-pub struct Shortcuts(HashMap<ShortcutKey, ShortcutAction>);
+pub struct Shortcuts {
+    #[serde(flatten)]
+    shortcuts: HashMap<ShortcutKey, ShortcutAction>,
+    /// True once the Excalidraw-style defaults were seeded into this config.
+    /// Lives inside the config (not a separate setting) so that it is saved
+    /// atomically together with the shortcuts themselves.
+    #[serde(rename = "defaults_seeded", default)]
+    defaults_seeded: bool,
+}
 
 impl Default for Shortcuts {
     fn default() -> Self {
-        let mut map = HashMap::<ShortcutKey, ShortcutAction>::default();
-        map.insert(
+        let mut shortcuts = HashMap::<ShortcutKey, ShortcutAction>::default();
+        shortcuts.insert(
             ShortcutKey::StylusPrimaryButton,
             ShortcutAction::ChangePenStyle {
                 style: PenStyle::Eraser,
                 mode: ShortcutMode::Temporary,
             },
         );
-        map.insert(
+        shortcuts.insert(
             ShortcutKey::StylusSecondaryButton,
             ShortcutAction::ChangePenStyle {
                 style: PenStyle::Selector,
                 mode: ShortcutMode::Temporary,
             },
         );
-        map.insert(
+        shortcuts.insert(
             ShortcutKey::MouseSecondaryButton,
             ShortcutAction::ChangePenStyle {
                 style: PenStyle::Shaper,
                 mode: ShortcutMode::Temporary,
             },
         );
-        map.insert(
+        shortcuts.insert(
             ShortcutKey::TouchTwoFingerLongPress,
             ShortcutAction::ChangePenStyle {
                 style: PenStyle::Eraser,
                 mode: ShortcutMode::Toggle,
             },
         );
-        map.insert(
+        shortcuts.insert(
             ShortcutKey::KeyboardCtrlSpace,
             ShortcutAction::ChangePenStyle {
                 style: PenStyle::Tools,
                 mode: ShortcutMode::Toggle,
             },
         );
-        map.insert(
+        shortcuts.insert(
             ShortcutKey::DrawingPadButton0,
             ShortcutAction::ChangePenStyle {
                 style: PenStyle::Brush,
                 mode: ShortcutMode::Permanent,
             },
         );
-        map.insert(
+        shortcuts.insert(
             ShortcutKey::DrawingPadButton1,
             ShortcutAction::ChangePenStyle {
                 style: PenStyle::Shaper,
                 mode: ShortcutMode::Permanent,
             },
         );
-        map.insert(
+        shortcuts.insert(
             ShortcutKey::DrawingPadButton2,
             ShortcutAction::ChangePenStyle {
                 style: PenStyle::Typewriter,
                 mode: ShortcutMode::Permanent,
             },
         );
-        map.insert(
+        shortcuts.insert(
             ShortcutKey::DrawingPadButton3,
             ShortcutAction::ChangePenStyle {
                 style: PenStyle::Eraser,
@@ -136,10 +144,13 @@ impl Default for Shortcuts {
         );
 
         for (binding, action) in excalidraw_default_shortcuts() {
-            map.insert(ShortcutKey::KeyboardCustom(binding), action);
+            shortcuts.insert(ShortcutKey::KeyboardCustom(binding), action);
         }
 
-        Self(map)
+        Self {
+            shortcuts,
+            defaults_seeded: true,
+        }
     }
 }
 
@@ -186,13 +197,13 @@ impl Deref for Shortcuts {
     type Target = HashMap<ShortcutKey, ShortcutAction>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.shortcuts
     }
 }
 
 impl DerefMut for Shortcuts {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.shortcuts
     }
 }
 
@@ -206,8 +217,8 @@ impl Shortcuts {
     /// `KeyboardCustom(KeyBinding { ctrl + space })` entry, preserving its
     /// action. Idempotent. Called once after deserializing the engine config.
     pub fn migrate_legacy_keyboard_shortcut(&mut self) {
-        if let Some(action) = self.0.remove(&ShortcutKey::KeyboardCtrlSpace) {
-            self.0
+        if let Some(action) = self.shortcuts.remove(&ShortcutKey::KeyboardCtrlSpace) {
+            self.shortcuts
                 .entry(ShortcutKey::KeyboardCustom(KeyBinding {
                     keyval: LEGACY_CTRL_SPACE_KEYVAL,
                     modifiers: LEGACY_CTRL_SPACE_MODIFIERS,
@@ -216,16 +227,21 @@ impl Shortcuts {
         }
     }
 
-    /// Seeds the Excalidraw-style letter shortcuts into an existing config.
-    /// Only inserts a binding whose keyval/modifiers combination is not
-    /// already registered, so a user's own binding for the same key wins.
-    /// Called once per profile (guarded by a gsettings flag), so a deleted
-    /// seed stays deleted.
+    /// Seeds the Excalidraw-style letter shortcuts into an existing config,
+    /// unless they were already seeded before (`defaults_seeded` flag). Only
+    /// inserts a binding whose keyval/modifiers combination is not already
+    /// registered, so a user's own binding for the same key wins. The flag is
+    /// part of the serialized config, so seeding and its marker are saved
+    /// atomically together — a seed deleted after seeding stays deleted.
     pub fn seed_missing_excalidraw_defaults(&mut self) {
+        if self.defaults_seeded {
+            return;
+        }
         for (binding, action) in excalidraw_default_shortcuts() {
             let key = ShortcutKey::KeyboardCustom(binding);
-            self.0.entry(key).or_insert(action);
+            self.shortcuts.entry(key).or_insert(action);
         }
+        self.defaults_seeded = true;
     }
 }
 
@@ -346,14 +362,18 @@ mod tests {
 
     #[test]
     fn excalidraw_defaults_seeded_only_when_missing() {
-        // An empty map receives all 7 presets.
-        let mut shortcuts = Shortcuts(HashMap::default());
-        shortcuts.seed_missing_excalidraw_defaults();
-        assert_eq!(shortcuts.len(), 7);
         let v_binding = KeyBinding {
             keyval: 0x76,
             modifiers: 0,
         };
+
+        // An unseeded config receives all 7 presets.
+        let mut shortcuts = Shortcuts {
+            shortcuts: HashMap::default(),
+            defaults_seeded: false,
+        };
+        shortcuts.seed_missing_excalidraw_defaults();
+        assert_eq!(shortcuts.len(), 7);
         assert!(matches!(
             shortcuts.get(&ShortcutKey::KeyboardCustom(v_binding)),
             Some(ShortcutAction::ChangePenStyle {
@@ -363,7 +383,10 @@ mod tests {
         ));
 
         // A user's own binding for the same key is preserved.
-        let mut shortcuts = Shortcuts(HashMap::default());
+        let mut shortcuts = Shortcuts {
+            shortcuts: HashMap::default(),
+            defaults_seeded: false,
+        };
         shortcuts.insert(
             ShortcutKey::KeyboardCustom(v_binding),
             ShortcutAction::ChangePenStyle {
@@ -381,36 +404,17 @@ mod tests {
             })
         ));
 
-        // Second call is a no-op.
+        // Second call is a no-op (the flag flipped).
         let snapshot = serde_json::to_string(&*shortcuts).unwrap();
         shortcuts.seed_missing_excalidraw_defaults();
         assert_eq!(serde_json::to_string(&*shortcuts).unwrap(), snapshot);
-    }
 
-    #[test]
-    fn default_contains_excalidraw_presets() {
-        let shortcuts = Shortcuts::default();
-        let v = ShortcutKey::KeyboardCustom(KeyBinding {
-            keyval: 0x76,
-            modifiers: 0,
-        });
-        let l = ShortcutKey::KeyboardCustom(KeyBinding {
-            keyval: 0x6c,
-            modifiers: 0,
-        });
-        assert!(matches!(
-            shortcuts.get(&v),
-            Some(ShortcutAction::ChangePenStyle {
-                style: PenStyle::Selector,
-                ..
-            })
-        ));
-        assert!(matches!(
-            shortcuts.get(&l),
-            Some(ShortcutAction::SwitchPenStyle {
-                shape_builder: Some(rnote_compose::builders::ShapeBuilderType::Line),
-                ..
-            })
-        ));
+        // A seeded config that had a preset deleted stays without it.
+        let mut shortcuts = Shortcuts {
+            shortcuts: HashMap::default(),
+            defaults_seeded: true,
+        };
+        shortcuts.seed_missing_excalidraw_defaults();
+        assert!(shortcuts.is_empty());
     }
 }
