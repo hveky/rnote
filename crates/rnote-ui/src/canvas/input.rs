@@ -1,5 +1,6 @@
 // Imports
 use super::RnCanvas;
+use glib::translate::*;
 use gtk4::{Native, gdk, glib, graphene, prelude::*};
 use p2d::math::Vector2;
 use rnote_compose::penevent::{KeyboardKey, ModifierKey, PenEvent, PenState, ShortcutKey};
@@ -264,21 +265,35 @@ pub(crate) fn handle_key_controller_key_pressed(
     let now = Instant::now();
     let keyboard_key = retrieve_keyboard_key(gdk_key);
     let modifier_keys = retrieve_modifier_keys(gdk_modifiers);
-    let shortcut_key = retrieve_keyboard_shortcut_key(gdk_key, gdk_modifiers);
 
-    let (propagation, widget_flags) = if let Some(shortcut_key) = shortcut_key {
-        canvas
-            .engine_mut()
-            .handle_pressed_shortcut_key(shortcut_key, now)
-    } else {
-        canvas.engine_mut().handle_pen_event(
-            PenEvent::KeyPressed {
-                keyboard_key,
-                modifier_keys,
-            },
-            None,
-            now,
-        )
+    let keyval: u32 = gdk_key.into_glib();
+    let modifiers: u32 = gdk_modifiers.bits() & rnote_compose::penevent::KeyBinding::MODIFIER_MASK;
+
+    let (propagation, widget_flags) = {
+        let mut engine = canvas.engine_mut();
+
+        // Try user-defined keyboard shortcuts first.
+        if let Some(result) = engine.handle_pressed_key_combination(keyval, modifiers, now) {
+            result
+        } else if gdk_key == gdk::Key::space
+            && gdk_modifiers.contains(gdk::ModifierType::CONTROL_MASK)
+            && engine.shortcut_registered(rnote_compose::penevent::ShortcutKey::KeyboardCtrlSpace)
+        {
+            // Legacy fallback for unmigrated configs.
+            engine.handle_pressed_shortcut_key(
+                rnote_compose::penevent::ShortcutKey::KeyboardCtrlSpace,
+                now,
+            )
+        } else {
+            engine.handle_pen_event(
+                PenEvent::KeyPressed {
+                    keyboard_key,
+                    modifier_keys,
+                },
+                None,
+                now,
+            )
+        }
     };
 
     canvas.emit_handle_widget_flags(widget_flags);
@@ -478,18 +493,6 @@ fn retrieve_pen_mode(event: &gdk::Event) -> Option<PenMode> {
     match device_tool.tool_type() {
         gdk::DeviceToolType::Pen => Some(PenMode::Pen),
         gdk::DeviceToolType::Eraser => Some(PenMode::Eraser),
-        _ => None,
-    }
-}
-
-pub(crate) fn retrieve_keyboard_shortcut_key(
-    gdk_key: gdk::Key,
-    modifier: gdk::ModifierType,
-) -> Option<ShortcutKey> {
-    match gdk_key {
-        gdk::Key::space if modifier.contains(gdk::ModifierType::CONTROL_MASK) => {
-            Some(ShortcutKey::KeyboardCtrlSpace)
-        }
         _ => None,
     }
 }

@@ -499,6 +499,34 @@ impl Engine {
             .handle_pressed_shortcut_key(shortcut_key, now, &mut engine_view_mut!(self))
     }
 
+    /// Handle a pressed keyboard key combination.
+    ///
+    /// Matches against registered [`ShortcutKey::KeyboardCustom`] shortcuts.
+    /// Returns `None` when no custom binding matched, so the caller can fall
+    /// through to regular key handling.
+    pub fn handle_pressed_key_combination(
+        &mut self,
+        keyval: u32,
+        modifiers: u32,
+        now: Instant,
+    ) -> Option<(EventPropagation, WidgetFlags)> {
+        self.penholder.handle_pressed_key_combination(
+            keyval,
+            modifiers,
+            now,
+            &mut engine_view_mut!(self),
+        )
+    }
+
+    /// Whether the given shortcut key has an action registered.
+    pub fn shortcut_registered(&self, shortcut_key: ShortcutKey) -> bool {
+        self.config
+            .read()
+            .pens_config
+            .get_shortcut_action(shortcut_key)
+            .is_some()
+    }
+
     /// Change the pen style.
     pub fn change_pen_style(&mut self, new_style: PenStyle) -> WidgetFlags {
         self.penholder

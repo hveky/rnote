@@ -13,7 +13,9 @@ use futures::channel::oneshot;
 use p2d::bounding_volume::Aabb;
 use piet::RenderContext;
 use rnote_compose::eventresult::EventPropagation;
-use rnote_compose::penevent::{KeyboardKey, ModifierKey, PenEvent, PenProgress, ShortcutKey};
+use rnote_compose::penevent::{
+    KeyBinding, KeyboardKey, ModifierKey, PenEvent, PenProgress, ShortcutKey,
+};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
@@ -276,6 +278,34 @@ impl PenHolder {
         widget_flags.redraw = true;
 
         (propagate, widget_flags)
+    }
+
+    /// Handle a pressed keyboard key combination.
+    ///
+    /// Matches the raw keyval + modifiers against registered
+    /// [`ShortcutKey::KeyboardCustom`] shortcuts. Returns `None` when nothing
+    /// matches, so the caller can fall through to regular key handling.
+    pub fn handle_pressed_key_combination(
+        &mut self,
+        keyval: u32,
+        modifiers: u32,
+        now: Instant,
+        engine_view: &mut EngineViewMut,
+    ) -> Option<(EventPropagation, WidgetFlags)> {
+        let target = KeyBinding { keyval, modifiers }.normalized();
+
+        engine_view
+            .config
+            .pens_config
+            .list_current_shortcuts()
+            .into_iter()
+            .find(|(k, _)| {
+                matches!(
+                    k,
+                    ShortcutKey::KeyboardCustom(b) if b.normalized() == target
+                )
+            })
+            .map(|(key, _)| self.handle_pressed_shortcut_key(key, now, engine_view))
     }
 
     /// Fetch clipboard content from the current pen.

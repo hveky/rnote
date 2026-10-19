@@ -117,37 +117,124 @@ impl KeyboardKey {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename = "shortcut_key")]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 /// A Shortcut key.
+///
+/// Serialized manually: the fixed slots as plain strings (backwards
+/// compatible with existing configs), and the custom keyboard combination
+/// encoded as `"keyboard_custom:<keyval>:<modifiers>"`, so it stays a valid
+/// JSON map key.
 pub enum ShortcutKey {
     /// Primary button of the stylus.
-    #[serde(rename = "stylus_primary_button")]
     StylusPrimaryButton,
     /// Secondary button of the stylus.
-    #[serde(rename = "stylus_secondary_button")]
     StylusSecondaryButton,
     /// Secondary mouse button.
-    #[serde(rename = "mouse_secondary_button")]
     MouseSecondaryButton,
     /// Touch two finger long press gesture.
-    #[serde(rename = "touch_two_finger_long_press")]
     TouchTwoFingerLongPress,
     /// Keyboard Shift plus Spacebar shortcut.
-    #[serde(rename = "keyboard_ctrl_space")]
     KeyboardCtrlSpace,
     /// Button 0 on a drawing pad.
-    #[serde(rename = "drawing_pad_button_0")]
     DrawingPadButton0,
     /// Button 1 on a drawing pad.
-    #[serde(rename = "drawing_pad_button_1")]
     DrawingPadButton1,
     /// Button 2 on a drawing pad.
-    #[serde(rename = "drawing_pad_button_2")]
     DrawingPadButton2,
     /// Button 3 on a drawing pad.
-    #[serde(rename = "drawing_pad_button_3")]
     DrawingPadButton3,
+    /// A user-defined keyboard key combination.
+    KeyboardCustom(KeyBinding),
+}
+
+impl ShortcutKey {
+    const KEYBOARD_CUSTOM_PREFIX: &'static str = "keyboard_custom:";
+
+    /// Encodes a KeyboardCustom payload into its string form.
+    pub fn keyboard_custom_to_string(binding: KeyBinding) -> String {
+        format!(
+            "{}{}:{}",
+            Self::KEYBOARD_CUSTOM_PREFIX,
+            binding.keyval,
+            binding.modifiers
+        )
+    }
+
+    /// Decodes a KeyboardCustom payload from its string form.
+    pub fn keyboard_custom_from_string(s: &str) -> Option<Self> {
+        let rest = s.strip_prefix(Self::KEYBOARD_CUSTOM_PREFIX)?;
+        let (keyval, modifiers) = rest.split_once(':')?;
+        Some(Self::KeyboardCustom(KeyBinding {
+            keyval: keyval.parse().ok()?,
+            modifiers: modifiers.parse().ok()?,
+        }))
+    }
+}
+
+impl Serialize for ShortcutKey {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let s = match self {
+            Self::StylusPrimaryButton => "stylus_primary_button",
+            Self::StylusSecondaryButton => "stylus_secondary_button",
+            Self::MouseSecondaryButton => "mouse_secondary_button",
+            Self::TouchTwoFingerLongPress => "touch_two_finger_long_press",
+            Self::KeyboardCtrlSpace => "keyboard_ctrl_space",
+            Self::DrawingPadButton0 => "drawing_pad_button_0",
+            Self::DrawingPadButton1 => "drawing_pad_button_1",
+            Self::DrawingPadButton2 => "drawing_pad_button_2",
+            Self::DrawingPadButton3 => "drawing_pad_button_3",
+            Self::KeyboardCustom(binding) => &Self::keyboard_custom_to_string(*binding),
+        };
+        serializer.serialize_str(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ShortcutKey {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        Ok(match s.as_str() {
+            "stylus_primary_button" => Self::StylusPrimaryButton,
+            "stylus_secondary_button" => Self::StylusSecondaryButton,
+            "mouse_secondary_button" => Self::MouseSecondaryButton,
+            "touch_two_finger_long_press" => Self::TouchTwoFingerLongPress,
+            "keyboard_ctrl_space" => Self::KeyboardCtrlSpace,
+            "drawing_pad_button_0" => Self::DrawingPadButton0,
+            "drawing_pad_button_1" => Self::DrawingPadButton1,
+            "drawing_pad_button_2" => Self::DrawingPadButton2,
+            "drawing_pad_button_3" => Self::DrawingPadButton3,
+            _ => Self::keyboard_custom_from_string(&s).ok_or_else(|| {
+                serde::de::Error::custom(format!("invalid shortcut key string: {s}"))
+            })?,
+        })
+    }
+}
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename = "key_binding")]
+/// A user-definable keyboard key combination. GTK-free: stores the raw GDK
+/// keyval and the raw GdkModifierType bit values, so the UI layer needs no
+/// conversion.
+pub struct KeyBinding {
+    /// The GDK keyval, e.g. space = 0x20.
+    #[serde(rename = "keyval")]
+    pub keyval: u32,
+    /// GdkModifierType bits: SHIFT_MASK = 0x1, CONTROL_MASK = 0x4, MOD1 (Alt) MASK = 0x8.
+    #[serde(rename = "modifiers")]
+    pub modifiers: u32,
+}
+
+impl KeyBinding {
+    /// Keep only Shift | Ctrl | Alt; drop Lock, NumLock and the other
+    /// modifier/button masks, so that e.g. NumLock does not invalidate a match.
+    pub const MODIFIER_MASK: u32 = 0x1 | 0x4 | 0x8;
+
+    /// Returns the binding with the modifier mask applied.
+    pub fn normalized(self) -> Self {
+        Self {
+            keyval: self.keyval,
+            modifiers: self.modifiers & Self::MODIFIER_MASK,
+        }
+    }
 }
 
 /// A modifier key.

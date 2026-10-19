@@ -998,7 +998,11 @@ impl RnAppWindow {
                 // On first app startup the engine config is empty, so we don't log an error
                 debug!("Did not load `engine-config` from settings, was empty");
             } else {
-                let engine_config = serde_json::from_str::<EngineConfig>(&engine_config_str)?;
+                let mut engine_config = serde_json::from_str::<EngineConfig>(&engine_config_str)?;
+                engine_config
+                    .pens_config
+                    .shortcuts
+                    .migrate_legacy_keyboard_shortcut();
                 self.engine_config().load_values(engine_config);
             }
         }

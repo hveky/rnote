@@ -1,6 +1,6 @@
 // Imports
 use super::PenStyle;
-use rnote_compose::penevent::ShortcutKey;
+use rnote_compose::penevent::{KeyBinding, ShortcutKey};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
@@ -138,5 +138,100 @@ impl Deref for Shortcuts {
 impl DerefMut for Shortcuts {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+/// GDK_KEY_space.
+pub const LEGACY_CTRL_SPACE_KEYVAL: u32 = 0x20;
+/// GdkModifierType CONTROL_MASK.
+pub const LEGACY_CTRL_SPACE_MODIFIERS: u32 = 0x4;
+
+impl Shortcuts {
+    /// Moves a legacy `KeyboardCtrlSpace` entry into a
+    /// `KeyboardCustom(KeyBinding { ctrl + space })` entry, preserving its
+    /// action. Idempotent. Called once after deserializing the engine config.
+    pub fn migrate_legacy_keyboard_shortcut(&mut self) {
+        if let Some(action) = self.0.remove(&ShortcutKey::KeyboardCtrlSpace) {
+            self.0
+                .entry(ShortcutKey::KeyboardCustom(KeyBinding {
+                    keyval: LEGACY_CTRL_SPACE_KEYVAL,
+                    modifiers: LEGACY_CTRL_SPACE_MODIFIERS,
+                }))
+                .or_insert(action);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shortcuts_default_roundtrip() {
+        let shortcuts = Shortcuts::default();
+        let json = serde_json::to_string(&shortcuts).unwrap();
+        let deserialized: Shortcuts = serde_json::from_str(&json).unwrap();
+        assert_eq!(*deserialized, *shortcuts);
+    }
+
+    #[test]
+    fn legacy_ctrl_space_migrates_to_keyboard_custom() {
+        // Old configs serialize every ShortcutKey as a bare string.
+        let legacy_json = r#"{"keyboard_ctrl_space":{"change_pen_style":{"style":"typewriter","mode":"toggle"}},"stylus_primary_button":{"change_pen_style":{"style":"eraser","mode":"temporary"}}}"#;
+        let mut shortcuts: Shortcuts = serde_json::from_str(legacy_json).unwrap();
+        assert!(shortcuts.contains_key(&ShortcutKey::KeyboardCtrlSpace));
+
+        shortcuts.migrate_legacy_keyboard_shortcut();
+
+        assert!(!shortcuts.contains_key(&ShortcutKey::KeyboardCtrlSpace));
+        let action = shortcuts
+            .get(&ShortcutKey::KeyboardCustom(KeyBinding {
+                keyval: LEGACY_CTRL_SPACE_KEYVAL,
+                modifiers: LEGACY_CTRL_SPACE_MODIFIERS,
+            }))
+            .unwrap();
+        assert!(matches!(
+            action,
+            ShortcutAction::ChangePenStyle {
+                style: PenStyle::Typewriter,
+                mode: ShortcutMode::Toggle,
+            }
+        ));
+        // The other entries survive untouched.
+        assert!(matches!(
+            shortcuts.get(&ShortcutKey::StylusPrimaryButton),
+            Some(ShortcutAction::ChangePenStyle {
+                style: PenStyle::Eraser,
+                ..
+            })
+        ));
+
+        // Second call is a no-op.
+        let snapshot = serde_json::to_string(&*shortcuts).unwrap();
+        shortcuts.migrate_legacy_keyboard_shortcut();
+        assert_eq!(serde_json::to_string(&*shortcuts).unwrap(), snapshot);
+    }
+
+    #[test]
+    fn keyboard_custom_serializes_as_string_key() {
+        let mut shortcuts = Shortcuts::default();
+        shortcuts.insert(
+            ShortcutKey::KeyboardCustom(KeyBinding {
+                keyval: 0x65,         // 'e'
+                modifiers: 0x4 | 0x1, // Ctrl + Shift
+            }),
+            ShortcutAction::ChangePenStyle {
+                style: PenStyle::Shaper,
+                mode: ShortcutMode::Permanent,
+            },
+        );
+        let json = serde_json::to_string(&shortcuts).unwrap();
+        assert!(
+            json.contains(r#""keyboard_custom:101:5""#),
+            "unexpected serialization: {json}"
+        );
+
+        let deserialized: Shortcuts = serde_json::from_str(&json).unwrap();
+        assert_eq!(*deserialized, *shortcuts);
     }
 }
