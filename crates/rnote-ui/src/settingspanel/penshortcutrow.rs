@@ -70,7 +70,8 @@ mod imp {
                 let new_pen_style = row.pen_style();
 
                 match &mut *row.imp().action.borrow_mut() {
-                    ShortcutAction::ChangePenStyle { style, .. } => {
+                    ShortcutAction::ChangePenStyle { style, .. }
+                    | ShortcutAction::SwitchPenStyle { style, .. } => {
                         *style = new_pen_style;
                     }
                 }
@@ -82,7 +83,8 @@ mod imp {
                 obj,
                 move |_| {
                     match &mut *penshortcutrow.imp().action.borrow_mut() {
-                        ShortcutAction::ChangePenStyle { mode, .. } => {
+                        ShortcutAction::ChangePenStyle { mode, .. }
+                        | ShortcutAction::SwitchPenStyle { mode, .. } => {
                             *mode = penshortcutrow.shortcut_mode();
                         }
                     }
@@ -171,6 +173,10 @@ impl RnPenShortcutRow {
     fn update_ui(&self) {
         match self.action() {
             ShortcutAction::ChangePenStyle { style, mode } => {
+                self.set_pen_style(style);
+                self.set_shortcut_mode(mode);
+            }
+            ShortcutAction::SwitchPenStyle { style, mode, .. } => {
                 self.set_pen_style(style);
                 self.set_shortcut_mode(mode);
             }

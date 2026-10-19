@@ -122,6 +122,11 @@
       <summary>the visible pen picker buttons in display order</summary>
       <description>The visible buttons of the bottom toolbar in display order. Buttons not listed are hidden. Valid ids: brush, shaper, typewriter, eraser, selector, tools, undo, redo.</description>
     </key>
+    <key name="shortcuts-defaults-seeded" type="b">
+      <default>false</default>
+      <summary>true once the default keyboard shortcuts have been seeded</summary>
+      <description>Set to true after the default custom keyboard shortcuts were seeded into the engine config once, so deleted defaults stay deleted.</description>
+    </key>
     <key name="autosave" type="b">
       <default>true</default>
       <summary>true when autosave is enabled</summary>

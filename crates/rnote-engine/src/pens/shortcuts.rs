@@ -1,5 +1,6 @@
 // Imports
 use super::PenStyle;
+use rnote_compose::builders::ShapeBuilderType;
 use rnote_compose::penevent::{KeyBinding, ShortcutKey};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -46,6 +47,17 @@ pub enum ShortcutAction {
     ChangePenStyle {
         #[serde(rename = "style")]
         style: PenStyle,
+        #[serde(rename = "mode")]
+        mode: ShortcutMode,
+    },
+    /// Switches the pen style, and optionally also the shaper's target shape
+    /// builder (used by the Excalidraw-style shape shortcuts).
+    #[serde(rename = "switch_pen_style")]
+    SwitchPenStyle {
+        #[serde(rename = "style")]
+        style: PenStyle,
+        #[serde(rename = "shape_builder")]
+        shape_builder: Option<ShapeBuilderType>,
         #[serde(rename = "mode")]
         mode: ShortcutMode,
     },
@@ -123,8 +135,51 @@ impl Default for Shortcuts {
             },
         );
 
+        for (binding, action) in excalidraw_default_shortcuts() {
+            map.insert(ShortcutKey::KeyboardCustom(binding), action);
+        }
+
         Self(map)
     }
+}
+
+/// Lowercase letter keyvals for the Excalidraw-style default shortcuts.
+const KEYVAL_V: u32 = 0x76;
+const KEYVAL_R: u32 = 0x72;
+const KEYVAL_O: u32 = 0x6f;
+const KEYVAL_A: u32 = 0x61;
+const KEYVAL_L: u32 = 0x6c;
+const KEYVAL_T: u32 = 0x74;
+const KEYVAL_E: u32 = 0x65;
+
+/// The Excalidraw-style letter shortcuts: V selector, R rectangle, O ellipse,
+/// A arrow, L line, T typewriter, E eraser. No modifiers.
+fn excalidraw_default_shortcuts() -> Vec<(KeyBinding, ShortcutAction)> {
+    fn key(keyval: u32) -> KeyBinding {
+        KeyBinding {
+            keyval,
+            modifiers: 0,
+        }
+    }
+    let switch = |style, shape_builder| ShortcutAction::SwitchPenStyle {
+        style,
+        shape_builder,
+        mode: ShortcutMode::Permanent,
+    };
+    let style = |style| ShortcutAction::ChangePenStyle {
+        style,
+        mode: ShortcutMode::Permanent,
+    };
+
+    vec![
+        (key(KEYVAL_V), style(PenStyle::Selector)),
+        (key(KEYVAL_R), switch(PenStyle::Shaper, Some(ShapeBuilderType::Rectangle))),
+        (key(KEYVAL_O), switch(PenStyle::Shaper, Some(ShapeBuilderType::Ellipse))),
+        (key(KEYVAL_A), switch(PenStyle::Shaper, Some(ShapeBuilderType::Arrow))),
+        (key(KEYVAL_L), switch(PenStyle::Shaper, Some(ShapeBuilderType::Line))),
+        (key(KEYVAL_T), style(PenStyle::Typewriter)),
+        (key(KEYVAL_E), style(PenStyle::Eraser)),
+    ]
 }
 
 impl Deref for Shortcuts {
@@ -158,6 +213,18 @@ impl Shortcuts {
                     modifiers: LEGACY_CTRL_SPACE_MODIFIERS,
                 }))
                 .or_insert(action);
+        }
+    }
+
+    /// Seeds the Excalidraw-style letter shortcuts into an existing config.
+    /// Only inserts a binding whose keyval/modifiers combination is not
+    /// already registered, so a user's own binding for the same key wins.
+    /// Called once per profile (guarded by a gsettings flag), so a deleted
+    /// seed stays deleted.
+    pub fn seed_missing_excalidraw_defaults(&mut self) {
+        for (binding, action) in excalidraw_default_shortcuts() {
+            let key = ShortcutKey::KeyboardCustom(binding);
+            self.0.entry(key).or_insert(action);
         }
     }
 }
@@ -233,5 +300,117 @@ mod tests {
 
         let deserialized: Shortcuts = serde_json::from_str(&json).unwrap();
         assert_eq!(*deserialized, *shortcuts);
+    }
+
+    #[test]
+    fn switch_pen_style_roundtrip() {
+        let mut shortcuts = Shortcuts::default();
+        shortcuts.insert(
+            ShortcutKey::KeyboardCustom(KeyBinding {
+                keyval: 0x72, // 'r'
+                modifiers: 0,
+            }),
+            ShortcutAction::SwitchPenStyle {
+                style: PenStyle::Shaper,
+                shape_builder: Some(rnote_compose::builders::ShapeBuilderType::Rectangle),
+                mode: ShortcutMode::Permanent,
+            },
+        );
+        let json = serde_json::to_string(&shortcuts).unwrap();
+        assert!(
+            json.contains(
+                r#""switch_pen_style":{"style":"shaper","shape_builder":"rectangle","mode":"permanent"}"#
+            ),
+            "unexpected serialization: {json}"
+        );
+
+        let deserialized: Shortcuts = serde_json::from_str(&json).unwrap();
+        assert_eq!(*deserialized, *shortcuts);
+    }
+
+    #[test]
+    fn legacy_change_pen_style_json_still_parses() {
+        let legacy_json = r#"{"keyboard_custom:118:0":{"change_pen_style":{"style":"selector","mode":"permanent"}}}"#;
+        let shortcuts: Shortcuts = serde_json::from_str(legacy_json).unwrap();
+        assert!(matches!(
+            shortcuts.get(&ShortcutKey::KeyboardCustom(KeyBinding {
+                keyval: 0x76,
+                modifiers: 0,
+            })),
+            Some(ShortcutAction::ChangePenStyle {
+                style: PenStyle::Selector,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn excalidraw_defaults_seeded_only_when_missing() {
+        // An empty map receives all 7 presets.
+        let mut shortcuts = Shortcuts(HashMap::default());
+        shortcuts.seed_missing_excalidraw_defaults();
+        assert_eq!(shortcuts.len(), 7);
+        let v_binding = KeyBinding {
+            keyval: 0x76,
+            modifiers: 0,
+        };
+        assert!(matches!(
+            shortcuts.get(&ShortcutKey::KeyboardCustom(v_binding)),
+            Some(ShortcutAction::ChangePenStyle {
+                style: PenStyle::Selector,
+                ..
+            })
+        ));
+
+        // A user's own binding for the same key is preserved.
+        let mut shortcuts = Shortcuts(HashMap::default());
+        shortcuts.insert(
+            ShortcutKey::KeyboardCustom(v_binding),
+            ShortcutAction::ChangePenStyle {
+                style: PenStyle::Tools,
+                mode: ShortcutMode::Toggle,
+            },
+        );
+        shortcuts.seed_missing_excalidraw_defaults();
+        assert_eq!(shortcuts.len(), 7);
+        assert!(matches!(
+            shortcuts.get(&ShortcutKey::KeyboardCustom(v_binding)),
+            Some(ShortcutAction::ChangePenStyle {
+                style: PenStyle::Tools,
+                ..
+            })
+        ));
+
+        // Second call is a no-op.
+        let snapshot = serde_json::to_string(&*shortcuts).unwrap();
+        shortcuts.seed_missing_excalidraw_defaults();
+        assert_eq!(serde_json::to_string(&*shortcuts).unwrap(), snapshot);
+    }
+
+    #[test]
+    fn default_contains_excalidraw_presets() {
+        let shortcuts = Shortcuts::default();
+        let v = ShortcutKey::KeyboardCustom(KeyBinding {
+            keyval: 0x76,
+            modifiers: 0,
+        });
+        let l = ShortcutKey::KeyboardCustom(KeyBinding {
+            keyval: 0x6c,
+            modifiers: 0,
+        });
+        assert!(matches!(
+            shortcuts.get(&v),
+            Some(ShortcutAction::ChangePenStyle {
+                style: PenStyle::Selector,
+                ..
+            })
+        ));
+        assert!(matches!(
+            shortcuts.get(&l),
+            Some(ShortcutAction::SwitchPenStyle {
+                shape_builder: Some(rnote_compose::builders::ShapeBuilderType::Line),
+                ..
+            })
+        ));
     }
 }

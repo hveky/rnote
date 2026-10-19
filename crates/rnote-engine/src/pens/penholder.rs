@@ -222,6 +222,50 @@ impl PenHolder {
         self.current_pen.handle_animation_frame(engine_view);
     }
 
+    /// Applies the mode-dependent part of a style-switching shortcut action
+    /// (shared by `ChangePenStyle` and `SwitchPenStyle`).
+    fn apply_shortcut_style_change(
+        &mut self,
+        style: PenStyle,
+        mode: ShortcutMode,
+        shortcut_key: ShortcutKey,
+        engine_view: &mut EngineViewMut,
+    ) -> WidgetFlags {
+        let mut widget_flags = WidgetFlags::default();
+
+        match mode {
+            ShortcutMode::Temporary => {
+                widget_flags |= self.change_style_override(Some(style), engine_view);
+            }
+            ShortcutMode::Permanent => {
+                self.toggle_pen_style = None;
+                widget_flags |= self.change_style_int(style, engine_view);
+            }
+            ShortcutMode::Toggle => {
+                if let Some(toggle_pen_style) = self.toggle_pen_style {
+                    // if the previous key was different, but also in toggle mode,
+                    // we switch to the new style instead of toggling back
+                    if self
+                        .prev_shortcut_key
+                        .map(|k| k != shortcut_key)
+                        .unwrap_or(true)
+                    {
+                        widget_flags |= self.change_style_int(style, engine_view);
+                    } else {
+                        self.toggle_pen_style = None;
+                        widget_flags |= self.change_style_int(toggle_pen_style, engine_view);
+                    }
+                } else {
+                    self.toggle_pen_style = Some(self.current_pen_style(&engine_view.as_im()));
+                    widget_flags |= self.change_style_int(style, engine_view);
+                }
+            }
+            ShortcutMode::Disabled => {}
+        }
+
+        widget_flags
+    }
+
     /// Handle a pressed shortcut key.
     pub fn handle_pressed_shortcut_key(
         &mut self,
@@ -238,37 +282,31 @@ impl PenHolder {
             .get_shortcut_action(shortcut_key)
         {
             match action {
-                ShortcutAction::ChangePenStyle { style, mode } => match mode {
-                    ShortcutMode::Temporary => {
-                        widget_flags |= self.change_style_override(Some(style), engine_view);
+                ShortcutAction::ChangePenStyle { style, mode } => {
+                    widget_flags |=
+                        self.apply_shortcut_style_change(style, mode, shortcut_key, engine_view);
+                }
+                ShortcutAction::SwitchPenStyle {
+                    style,
+                    shape_builder,
+                    mode,
+                } => {
+                    widget_flags |= self.apply_shortcut_style_change(
+                        style,
+                        mode,
+                        shortcut_key,
+                        engine_view,
+                    );
+                    if style == PenStyle::Shaper
+                        && let Some(builder) = shape_builder
+                    {
+                        engine_view.config.pens_config.shaper_config.builder_type = builder;
+                        // When already on the shaper, the style change above
+                        // is a no-op and sets no flags; still refresh the UI
+                        // so the shaper sidebar picks up the new builder type.
+                        widget_flags.refresh_ui = true;
                     }
-                    ShortcutMode::Permanent => {
-                        self.toggle_pen_style = None;
-                        widget_flags |= self.change_style_int(style, engine_view);
-                    }
-                    ShortcutMode::Toggle => {
-                        if let Some(toggle_pen_style) = self.toggle_pen_style {
-                            // if the previous key was different, but also in toggle mode,
-                            // we switch to the new style instead of toggling back
-                            if self
-                                .prev_shortcut_key
-                                .map(|k| k != shortcut_key)
-                                .unwrap_or(true)
-                            {
-                                widget_flags |= self.change_style_int(style, engine_view);
-                            } else {
-                                self.toggle_pen_style = None;
-                                widget_flags |=
-                                    self.change_style_int(toggle_pen_style, engine_view);
-                            }
-                        } else {
-                            self.toggle_pen_style =
-                                Some(self.current_pen_style(&engine_view.as_im()));
-                            widget_flags |= self.change_style_int(style, engine_view);
-                        }
-                    }
-                    ShortcutMode::Disabled => {}
-                },
+                }
             }
 
             propagate = EventPropagation::Stop;

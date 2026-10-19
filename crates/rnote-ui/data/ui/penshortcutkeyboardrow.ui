@@ -31,6 +31,23 @@
       </object>
     </child>
     <child type="suffix">
+      <object class="GtkDropDown" id="shape_builder_dropdown">
+        <property name="halign">end</property>
+        <property name="valign">center</property>
+        <property name="visible">false</property>
+        <property name="model">
+          <object class="GtkStringList">
+            <items>
+              <item translatable="yes">Line</item>
+              <item translatable="yes">Arrow</item>
+              <item translatable="yes">Rectangle</item>
+              <item translatable="yes">Ellipse</item>
+            </items>
+          </object>
+        </property>
+      </object>
+    </child>
+    <child type="suffix">
       <object class="GtkButton" id="delete_button">
         <property name="icon-name">user-trash-symbolic</property>
         <property name="valign">center</property>

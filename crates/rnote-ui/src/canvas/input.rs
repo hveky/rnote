@@ -9,6 +9,7 @@ use rnote_engine::WidgetFlags;
 use rnote_engine::ext::EventPropagationExt;
 use rnote_engine::ext::GraphenePointExt;
 use rnote_engine::pens::PenMode;
+use rnote_engine::pens::PenStyle;
 use rnote_engine::pens::penholder::BacklogPolicy;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
@@ -269,11 +270,33 @@ pub(crate) fn handle_key_controller_key_pressed(
     let keyval: u32 = gdk_key.into_glib();
     let modifiers: u32 = gdk_modifiers.bits() & rnote_compose::penevent::KeyBinding::MODIFIER_MASK;
 
+    // While the typewriter pen is active, plain printable keys go to text
+    // input: they must not trigger shortcuts or panning.
+    let is_plain_printable = modifiers == 0
+        && gdk_key.to_unicode().is_some_and(|c| !c.is_control());
+    let typewriter_typing = {
+        let engine = canvas.engine_ref();
+        engine.current_pen_style_w_override() == PenStyle::Typewriter && is_plain_printable
+    };
+
+    // Holding space pans the canvas by dragging (Excalidraw-style hand tool).
+    if keyval == gdk::Key::space.into_glib()
+        && modifiers == 0
+        && !typewriter_typing
+    {
+        canvas.set_space_panning(true);
+        canvas.set_cursor_from_name(Some("grab"));
+        // Also blocks the ScrolledWindow's space-key scrolling.
+        return glib::Propagation::Stop;
+    }
+
     let (propagation, widget_flags) = {
         let mut engine = canvas.engine_mut();
 
         // Try user-defined keyboard shortcuts first.
-        if let Some(result) = engine.handle_pressed_key_combination(keyval, modifiers, now) {
+        if !typewriter_typing
+            && let Some(result) = engine.handle_pressed_key_combination(keyval, modifiers, now)
+        {
             result
         } else if gdk_key == gdk::Key::space
             && gdk_modifiers.contains(gdk::ModifierType::CONTROL_MASK)
@@ -301,11 +324,16 @@ pub(crate) fn handle_key_controller_key_pressed(
 }
 
 pub(crate) fn handle_key_controller_key_released(
-    _canvas: &RnCanvas,
+    canvas: &RnCanvas,
     gdk_key: gdk::Key,
     gdk_modifiers: gdk::ModifierType,
 ) {
     trace!("canvas event key released - gdk_key: {gdk_key:?}, gdk_modifiers: {gdk_modifiers:?}");
+
+    if gdk_key == gdk::Key::space && canvas.space_panning() {
+        canvas.set_space_panning(false);
+        canvas.set_cursor_from_name(None);
+    }
 }
 
 pub(crate) fn handle_imcontext_text_commit(canvas: &RnCanvas, text: &str) {

@@ -1,7 +1,8 @@
 // Imports
 use super::keybindingbutton::RnKeybindingButton;
 use super::penshortcutmodels::{
-    ChangePenStyleIconFactory, ChangePenStyleListFactory, ChangePenStyleListModel,
+    SHORTCUT_SHAPE_BUILDERS, ChangePenStyleIconFactory, ChangePenStyleListFactory,
+    ChangePenStyleListModel, ShortcutShapeBuilderListModel, shape_builder_position,
 };
 use adw::{prelude::*, subclass::prelude::*};
 use gtk4::{
@@ -9,6 +10,7 @@ use gtk4::{
 };
 use num_traits::ToPrimitive;
 use once_cell::sync::Lazy;
+use rnote_compose::builders::ShapeBuilderType;
 use rnote_compose::penevent::KeyBinding;
 use rnote_engine::pens::PenStyle;
 use rnote_engine::pens::shortcuts::{ShortcutAction, ShortcutMode};
@@ -23,6 +25,7 @@ mod imp {
         pub(crate) binding: RefCell<Option<KeyBinding>>,
         pub(crate) action: RefCell<ShortcutAction>,
         pub(crate) changepenstyle_model: ChangePenStyleListModel,
+        pub(crate) shapebuilder_model: ShortcutShapeBuilderListModel,
 
         #[template_child(id = "keybinding_button")]
         pub(crate) keybinding_button: TemplateChild<RnKeybindingButton>,
@@ -30,6 +33,8 @@ mod imp {
         pub(crate) penstyle_dropdown: TemplateChild<DropDown>,
         #[template_child]
         pub(crate) mode_dropdown: TemplateChild<DropDown>,
+        #[template_child]
+        pub(crate) shape_builder_dropdown: TemplateChild<DropDown>,
         #[template_child]
         pub(crate) delete_button: TemplateChild<Button>,
     }
@@ -43,10 +48,12 @@ mod imp {
                     mode: ShortcutMode::Permanent,
                 }),
                 changepenstyle_model: ChangePenStyleListModel::default(),
+                shapebuilder_model: ShortcutShapeBuilderListModel::default(),
 
                 keybinding_button: TemplateChild::default(),
                 penstyle_dropdown: TemplateChild::default(),
                 mode_dropdown: TemplateChild::default(),
+                shape_builder_dropdown: TemplateChild::default(),
                 delete_button: TemplateChild::default(),
             }
         }
@@ -88,6 +95,10 @@ mod imp {
                 .penstyle_dropdown
                 .get()
                 .set_factory(Some(&*icon_factory));
+            obj.imp()
+                .shape_builder_dropdown
+                .get()
+                .set_model(Some(&*obj.imp().shapebuilder_model));
 
             obj.imp()
                 .keybinding_button
@@ -112,11 +123,14 @@ mod imp {
                     #[weak(rename_to = row)]
                     obj,
                     move |_| {
+                        let new_style = row.pen_style();
                         match &mut *row.imp().action.borrow_mut() {
-                            ShortcutAction::ChangePenStyle { style, .. } => {
-                                *style = row.pen_style();
+                            ShortcutAction::ChangePenStyle { style, .. }
+                            | ShortcutAction::SwitchPenStyle { style, .. } => {
+                                *style = new_style;
                             }
                         }
+                        row.update_shape_builder_dropdown();
                         row.emit_by_name::<()>("row-changed", &[]);
                     }
                 ));
@@ -129,8 +143,39 @@ mod imp {
                     obj,
                     move |_| {
                         match &mut *row.imp().action.borrow_mut() {
-                            ShortcutAction::ChangePenStyle { mode, .. } => {
+                            ShortcutAction::ChangePenStyle { mode, .. }
+                            | ShortcutAction::SwitchPenStyle { mode, .. } => {
                                 *mode = row.shortcut_mode();
+                            }
+                        }
+                        row.emit_by_name::<()>("row-changed", &[]);
+                    }
+                ));
+
+            obj.imp()
+                .shape_builder_dropdown
+                .get()
+                .connect_selected_notify(clone!(
+                    #[weak(rename_to = row)]
+                    obj,
+                    move |_| {
+                        // Read the selected builder without holding the
+                        // refcell borrow: set_selected() in
+                        // update_shape_builder_dropdown() can re-enter this
+                        // handler while a borrow is active.
+                        let position = row.imp().shape_builder_dropdown.get().selected();
+                        let new_builder =
+                            SHORTCUT_SHAPE_BUILDERS.get(position as usize).copied();
+
+                        let action_is_switch = matches!(
+                            &*row.imp().action.borrow(),
+                            ShortcutAction::SwitchPenStyle { .. }
+                        );
+                        if action_is_switch {
+                            if let ShortcutAction::SwitchPenStyle { shape_builder, .. } =
+                                &mut *row.imp().action.borrow_mut()
+                            {
+                                *shape_builder = new_builder;
                             }
                         }
                         row.emit_by_name::<()>("row-changed", &[]);
@@ -212,6 +257,45 @@ impl RnKeyboardShortcutRow {
                 self.set_pen_style(style);
                 self.set_shortcut_mode(mode);
             }
+            ShortcutAction::SwitchPenStyle {
+                style,
+                shape_builder,
+                mode,
+            } => {
+                self.set_pen_style(style);
+                self.set_shortcut_mode(mode);
+                if let Some(builder) = shape_builder {
+                    self.set_shape_builder(builder);
+                }
+            }
+        }
+        self.update_shape_builder_dropdown();
+    }
+
+    /// Shows the shape-builder dropdown only for `SwitchPenStyle` actions
+    /// targeting the shaper, and syncs its selection.
+    fn update_shape_builder_dropdown(&self) {
+        let visible = matches!(
+            &*self.imp().action.borrow(),
+            ShortcutAction::SwitchPenStyle {
+                style: PenStyle::Shaper,
+                ..
+            }
+        );
+        self.imp().shape_builder_dropdown.get().set_visible(visible);
+        if visible
+            && let ShortcutAction::SwitchPenStyle { shape_builder, .. } =
+                &*self.imp().action.borrow()
+            && let Some(builder) = shape_builder
+            && let Some(position) = shape_builder_position(*builder)
+        {
+            self.imp().shape_builder_dropdown.get().set_selected(position);
+        }
+    }
+
+    pub(crate) fn set_shape_builder(&self, builder: ShapeBuilderType) {
+        if let Some(position) = shape_builder_position(builder) {
+            self.imp().shape_builder_dropdown.get().set_selected(position);
         }
     }
 

@@ -1003,6 +1003,15 @@ impl RnAppWindow {
                     .pens_config
                     .shortcuts
                     .migrate_legacy_keyboard_shortcut();
+                // Seed the Excalidraw-style letter shortcuts once per profile;
+                // a seed deleted in the settings must stay deleted.
+                if !settings.boolean("shortcuts-defaults-seeded") {
+                    engine_config
+                        .pens_config
+                        .shortcuts
+                        .seed_missing_excalidraw_defaults();
+                    let _ = settings.set_boolean("shortcuts-defaults-seeded", true);
+                }
                 self.engine_config().load_values(engine_config);
             }
         }

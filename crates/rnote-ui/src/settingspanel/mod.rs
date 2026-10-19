@@ -710,13 +710,20 @@ impl RnSettingsPanel {
                     .collect();
                 let ids = crate::penpicker::sanitize_penpicker_ids(ids);
 
-                // Rebuild the rows from the ordered ids.
-                while let Some(child) = imp.bottom_toolbar_buttons_list.get().first_child() {
-                    imp.bottom_toolbar_buttons_list.get().remove(&child);
-                }
-
+                // One row per known button, so that an unchecked (hidden)
+                // button keeps its row and can be re-checked. Visible rows
+                // come first in the saved order, hidden ones after.
                 let n = ids.len();
-                for (pos, id) in ids.iter().enumerate() {
+                let rows: Vec<(&str, Option<usize>)> = crate::penpicker::PENPICKER_BUTTON_IDS
+                    .iter()
+                    .map(|id| (*id, ids.iter().position(|i| i == id)))
+                    .collect();
+                let rows = rows
+                    .iter()
+                    .filter(|(_, pos)| pos.is_some())
+                    .chain(rows.iter().filter(|(_, pos)| pos.is_none()))
+                    .copied();
+                for (id, pos) in rows {
                     let Some(widget) = penpicker.widget_for_id(id) else {
                         continue;
                     };
@@ -727,7 +734,7 @@ impl RnSettingsPanel {
                             .first_child()
                             .and_then(|c| c.downcast::<gtk4::ToggleButton>().ok())
                             .map(|t| t.tooltip_text().unwrap_or_default());
-                        tooltip.unwrap_or_else(|| glib::GString::from(id.as_str()))
+                        tooltip.unwrap_or_else(|| glib::GString::from(id))
                     });
 
                     let icon_name = widget.first_child().and_then(|c| {
@@ -746,16 +753,17 @@ impl RnSettingsPanel {
                         row.add_prefix(&gtk4::Image::from_icon_name(&icon_name));
                     }
 
+                    let present = pos.is_some();
                     let check = gtk4::CheckButton::new();
-                    check.set_active(true);
+                    check.set_active(present);
                     row.add_suffix(&check);
 
                     let up_btn = gtk4::Button::from_icon_name("dir-up-symbolic");
                     let down_btn = gtk4::Button::from_icon_name("dir-down-symbolic");
                     up_btn.set_valign(gtk4::Align::Center);
                     down_btn.set_valign(gtk4::Align::Center);
-                    up_btn.set_sensitive(pos > 0);
-                    down_btn.set_sensitive(pos + 1 < n);
+                    up_btn.set_sensitive(present && pos.is_some_and(|p| p > 0));
+                    down_btn.set_sensitive(present && pos.is_some_and(|p| p + 1 < n));
                     row.add_suffix(&up_btn);
                     row.add_suffix(&down_btn);
 
@@ -783,25 +791,25 @@ impl RnSettingsPanel {
                     );
 
                     let ids_for_check = ids.clone();
-                    let id_for_check = id.clone();
+                    let id_for_check = id;
                     let apply_for_check = apply.clone();
                     check.connect_toggled(move |check| {
                         let mut new_ids = ids_for_check.clone();
                         if check.is_active() {
                             // Re-add at the end.
-                            new_ids.push(id_for_check.clone());
+                            new_ids.push(id_for_check.to_string());
                         } else {
-                            new_ids.retain(|i| i != &id_for_check);
+                            new_ids.retain(|i| *i != id_for_check);
                         }
                         apply_for_check(new_ids);
                     });
 
                     let ids_for_up = ids.clone();
-                    let id_for_up = id.clone();
+                    let id_for_up = id;
                     let apply_for_up = apply.clone();
                     up_btn.connect_clicked(move |_| {
                         let mut new_ids = ids_for_up.clone();
-                        if let Some(pos) = new_ids.iter().position(|i| i == &id_for_up)
+                        if let Some(pos) = new_ids.iter().position(|i| *i == id_for_up)
                             && pos > 0
                         {
                             new_ids.swap(pos - 1, pos);
@@ -810,11 +818,11 @@ impl RnSettingsPanel {
                     });
 
                     let ids_for_down = ids.clone();
-                    let id_for_down = id.clone();
+                    let id_for_down = id;
                     let apply_for_down = apply.clone();
                     down_btn.connect_clicked(move |_| {
                         let mut new_ids = ids_for_down.clone();
-                        if let Some(pos) = new_ids.iter().position(|i| i == &id_for_down)
+                        if let Some(pos) = new_ids.iter().position(|i| *i == id_for_down)
                             && pos + 1 < new_ids.len()
                         {
                             new_ids.swap(pos, pos + 1);
@@ -1671,7 +1679,7 @@ impl RnSettingsPanel {
                     .get()
                     .observe_children()
                     .n_items();
-                if current_count >= 8 {
+                if current_count >= 12 {
                     return;
                 }
 

@@ -5,9 +5,65 @@ use gtk4::{
     Image, Label, ListItem, Orientation, SignalListItemFactory, StringList, glib::prelude::*,
     prelude::*,
 };
+use rnote_compose::builders::ShapeBuilderType;
 use rnote_engine::pens::PenStyle;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
+
+/// The shape builder types selectable for a `SwitchPenStyle` shortcut on the
+/// shaper, in dropdown order.
+pub(crate) const SHORTCUT_SHAPE_BUILDERS: [ShapeBuilderType; 4] = [
+    ShapeBuilderType::Line,
+    ShapeBuilderType::Arrow,
+    ShapeBuilderType::Rectangle,
+    ShapeBuilderType::Ellipse,
+];
+
+#[derive(Debug, Clone)]
+pub(crate) struct ShortcutShapeBuilderListModel(StringList);
+
+impl Default for ShortcutShapeBuilderListModel {
+    fn default() -> Self {
+        let names: Vec<String> = SHORTCUT_SHAPE_BUILDERS
+            .iter()
+            .map(|builder| shape_builder_label(*builder))
+            .collect();
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        Self(StringList::new(&refs))
+    }
+}
+
+impl Deref for ShortcutShapeBuilderListModel {
+    type Target = StringList;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for ShortcutShapeBuilderListModel {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+pub(crate) fn shape_builder_label(builder: ShapeBuilderType) -> String {
+    match builder {
+        ShapeBuilderType::Line => gettext("Line"),
+        ShapeBuilderType::Arrow => gettext("Arrow"),
+        ShapeBuilderType::Rectangle => gettext("Rectangle"),
+        ShapeBuilderType::Ellipse => gettext("Ellipse"),
+        _ => format!("{builder:?}"),
+    }
+}
+
+/// Returns the dropdown position for a builder type, if it is selectable.
+pub(crate) fn shape_builder_position(builder: ShapeBuilderType) -> Option<u32> {
+    SHORTCUT_SHAPE_BUILDERS
+        .iter()
+        .position(|b| *b == builder)
+        .map(|p| p as u32)
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct ChangePenStyleListModel(StringList);

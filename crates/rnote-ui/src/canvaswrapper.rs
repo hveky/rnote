@@ -45,6 +45,8 @@ mod imp {
         pub(crate) canvas_mouse_drag_middle_gesture: GestureDrag,
         pub(crate) canvas_alt_drag_gesture: GestureDrag,
         pub(crate) canvas_alt_shift_drag_gesture: GestureDrag,
+        // space + drag for panning with pointer (Excalidraw-style hand tool)
+        pub(crate) canvas_space_drag_gesture: GestureDrag,
         pub(crate) touch_two_finger_long_press_gesture: GestureLongPress,
         pub(crate) touch_long_press_gesture: GestureLongPress,
 
@@ -113,6 +115,14 @@ mod imp {
                 .propagation_phase(PropagationPhase::Capture)
                 .build();
 
+            // space + drag for panning with pointer (Excalidraw-style hand tool)
+            let canvas_space_drag_gesture = GestureDrag::builder()
+                .name("canvas_space_drag_gesture")
+                .button(gdk::BUTTON_PRIMARY)
+                .exclusive(true)
+                .propagation_phase(PropagationPhase::Capture)
+                .build();
+
             let touch_two_finger_long_press_gesture = GestureLongPress::builder()
                 .name("touch_two_finger_long_press_gesture")
                 .touch_only(true)
@@ -144,6 +154,7 @@ mod imp {
                 canvas_mouse_drag_middle_gesture,
                 canvas_alt_drag_gesture,
                 canvas_alt_shift_drag_gesture,
+                canvas_space_drag_gesture,
                 touch_two_finger_long_press_gesture,
                 touch_long_press_gesture,
 
@@ -191,6 +202,8 @@ mod imp {
                 .add_controller(self.canvas_alt_drag_gesture.clone());
             self.scroller
                 .add_controller(self.canvas_alt_shift_drag_gesture.clone());
+            self.scroller
+                .add_controller(self.canvas_space_drag_gesture.clone());
             self.scroller
                 .add_controller(self.touch_two_finger_long_press_gesture.clone());
             self.canvas
@@ -694,6 +707,59 @@ mod imp {
                         canvaswrapper
                             .canvas()
                             .emit_handle_widget_flags(widget_flags);
+                    }
+                ));
+            }
+
+            // Pan with space held + drag (Excalidraw-style hand tool)
+            {
+                let offset_start = Rc::new(Cell::new(Vector2::ZERO));
+
+                self.canvas_space_drag_gesture.connect_drag_begin(clone!(
+                    #[strong]
+                    offset_start,
+                    #[weak(rename_to=canvaswrapper)]
+                    obj,
+                    move |gesture, _, _| {
+                        let canvas = canvaswrapper.canvas();
+
+                        if canvas.space_panning() {
+                            gesture.set_state(EventSequenceState::Claimed);
+                            offset_start.set(canvas.engine_ref().camera.offset());
+                            canvas.set_cursor_from_name(Some("grabbing"));
+                        } else {
+                            gesture.set_state(EventSequenceState::Denied);
+                        }
+                    }
+                ));
+
+                self.canvas_space_drag_gesture.connect_drag_update(clone!(
+                    #[strong]
+                    offset_start,
+                    #[weak(rename_to=canvaswrapper)]
+                    obj,
+                    move |_, offset_x, offset_y| {
+                        let canvas = canvaswrapper.canvas();
+                        let new_offset = offset_start.get() - Vector2::new(offset_x, offset_y);
+                        let widget_flags = canvas.engine_mut().camera_set_offset_expand(new_offset);
+                        canvas.emit_handle_widget_flags(widget_flags);
+                    }
+                ));
+
+                self.canvas_space_drag_gesture.connect_drag_end(clone!(
+                    #[weak(rename_to=canvaswrapper)]
+                    obj,
+                    move |_, _, _| {
+                        let canvas = canvaswrapper.canvas();
+                        let widget_flags = canvas
+                            .engine_mut()
+                            .update_rendering_current_viewport();
+                        canvas.emit_handle_widget_flags(widget_flags);
+
+                        // Space may still be held after the drag.
+                        if canvas.space_panning() {
+                            canvas.set_cursor_from_name(Some("grab"));
+                        }
                     }
                 ));
             }

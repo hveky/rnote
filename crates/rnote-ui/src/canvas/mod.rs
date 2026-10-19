@@ -90,6 +90,8 @@ mod imp {
         pub(crate) empty: Cell<bool>,
         pub(crate) touch_drawing: Cell<bool>,
         pub(crate) show_drawing_cursor: Cell<bool>,
+        /// True while space is held for the Excalidraw-style drag-to-pan.
+        pub(crate) space_panning: Cell<bool>,
 
         pub(crate) last_export_dir: RefCell<Option<gio::File>>,
     }
@@ -187,6 +189,7 @@ mod imp {
                 empty: Cell::new(true),
                 touch_drawing: Cell::new(false),
                 show_drawing_cursor: Cell::new(false),
+                space_panning: Cell::new(false),
 
                 last_export_dir: RefCell::new(None),
             }
@@ -836,6 +839,14 @@ impl RnCanvas {
         if self.imp().touch_drawing.get() != touch_drawing {
             self.set_property("touch-drawing", touch_drawing.to_value());
         }
+    }
+
+    pub(crate) fn space_panning(&self) -> bool {
+        self.imp().space_panning.get()
+    }
+
+    pub(crate) fn set_space_panning(&self, space_panning: bool) {
+        self.imp().space_panning.set(space_panning);
     }
 
     #[allow(unused)]
