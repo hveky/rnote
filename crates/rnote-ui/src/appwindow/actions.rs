@@ -95,6 +95,10 @@ impl RnAppWindow {
         self.add_action(&action_selection_select_all);
         let action_selection_deselect_all = gio::SimpleAction::new("selection-deselect-all", None);
         self.add_action(&action_selection_deselect_all);
+        let action_selection_group = gio::SimpleAction::new("selection-group", None);
+        self.add_action(&action_selection_group);
+        let action_selection_ungroup = gio::SimpleAction::new("selection-ungroup", None);
+        self.add_action(&action_selection_ungroup);
         let action_clear_doc = gio::SimpleAction::new("clear-doc", None);
         self.add_action(&action_clear_doc);
         let action_new_doc = gio::SimpleAction::new("new-doc", None);
@@ -545,6 +549,32 @@ impl RnAppWindow {
                     return;
                 };
                 let widget_flags = canvas.engine_mut().deselect_all_strokes();
+                appwindow.handle_widget_flags(widget_flags, &canvas);
+            }
+        ));
+
+        // group selected strokes
+        action_selection_group.connect_activate(clone!(
+            #[weak(rename_to=appwindow)]
+            self,
+            move |_, _| {
+                let Some(canvas) = appwindow.active_tab_canvas() else {
+                    return;
+                };
+                let widget_flags = canvas.engine_mut().group_selection();
+                appwindow.handle_widget_flags(widget_flags, &canvas);
+            }
+        ));
+
+        // ungroup selected strokes
+        action_selection_ungroup.connect_activate(clone!(
+            #[weak(rename_to=appwindow)]
+            self,
+            move |_, _| {
+                let Some(canvas) = appwindow.active_tab_canvas() else {
+                    return;
+                };
+                let widget_flags = canvas.engine_mut().ungroup_selection();
                 appwindow.handle_widget_flags(widget_flags, &canvas);
             }
         ));
@@ -1208,6 +1238,8 @@ impl RnAppWindow {
         app.set_accels_for_action("win.clipboard-copy", &["<Ctrl>c"]);
         app.set_accels_for_action("win.clipboard-cut", &["<Ctrl>x"]);
         app.set_accels_for_action("win.clipboard-paste", &["<Ctrl>v"]);
+        app.set_accels_for_action("win.selection-group", &["<Ctrl>g"]);
+        app.set_accels_for_action("win.selection-ungroup", &["<Ctrl><Shift>g"]);
         app.set_accels_for_action("win.text-bold", &["<Ctrl>b"]);
         app.set_accels_for_action("win.text-italic", &["<Ctrl>i"]);
         app.set_accels_for_action("win.text-underline", &["<Ctrl>u"]);

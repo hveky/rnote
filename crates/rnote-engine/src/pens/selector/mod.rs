@@ -813,6 +813,46 @@ impl Selector {
 
         *widget_flags |= self.update_state(engine_view);
     }
+
+    /// Groups the current selection into one group (Ctrl+G). Works on the
+    /// store selection, so it is independent of the selector state. The
+    /// selection itself is unchanged, only its grouping. No-op with fewer
+    /// than 2 selected strokes.
+    fn group_current_selection(
+        engine_view: &mut EngineViewMut,
+        widget_flags: &mut WidgetFlags,
+    ) {
+        let selection_keys = engine_view.store.selection_keys_as_rendered();
+        if selection_keys.len() < 2 {
+            return;
+        }
+
+        engine_view.store.group_keys(&selection_keys);
+
+        *widget_flags |= engine_view.store.record(Instant::now());
+        widget_flags.redraw = true;
+        widget_flags.resize = true;
+        widget_flags.store_modified = true;
+    }
+
+    /// Ungroups the current selection (Ctrl+Shift+G). No-op without selected
+    /// strokes.
+    fn ungroup_current_selection(
+        engine_view: &mut EngineViewMut,
+        widget_flags: &mut WidgetFlags,
+    ) {
+        let selection_keys = engine_view.store.selection_keys_as_rendered();
+        if selection_keys.is_empty() {
+            return;
+        }
+
+        engine_view.store.ungroup_keys(&selection_keys);
+
+        *widget_flags |= engine_view.store.record(Instant::now());
+        widget_flags.redraw = true;
+        widget_flags.resize = true;
+        widget_flags.store_modified = true;
+    }
 }
 
 fn cancel_selection(selection: &[StrokeKey], engine_view: &mut EngineViewMut) -> WidgetFlags {

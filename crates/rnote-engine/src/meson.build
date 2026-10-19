@@ -56,6 +56,7 @@ rnote_engine_sources = files(
     'selectioncollision.rs',
     'snap.rs',
     'store/chrono_comp.rs',
+    'store/group_comp.rs',
     'store/keytree.rs',
     'store/mod.rs',
     'store/render_comp.rs',

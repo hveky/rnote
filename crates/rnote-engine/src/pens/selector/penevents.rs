@@ -96,9 +96,11 @@ impl Selector {
                                 .and_then(|key| engine_view.store.selected(key).map(|s| !s))
                                 .unwrap_or(false)
                         {
-                            let key_to_add = key_to_add.unwrap();
-                            engine_view.store.set_selected(key_to_add, true);
-                            selection.push(key_to_add);
+                            // Adding a group member selects the whole group.
+                            let keys_to_add =
+                                engine_view.store.expand_hit_to_group(key_to_add.unwrap());
+                            engine_view.store.set_selected_keys(&keys_to_add, true);
+                            selection.extend(keys_to_add);
                             if let Some(new_bounds) =
                                 engine_view.store.bounds_for_strokes(selection)
                             {
@@ -178,10 +180,12 @@ impl Selector {
                                 .unwrap_or(false)
                         {
                             // defer the [SelectorStyle::Single] after checking whether we are
-                            // clicking on a selection node
-                            let key_to_add = key_to_add.unwrap();
-                            engine_view.store.set_selected(key_to_add, true);
-                            selection.push(key_to_add);
+                            // clicking on a selection node.
+                            // Adding a group member selects the whole group.
+                            let keys_to_add =
+                                engine_view.store.expand_hit_to_group(key_to_add.unwrap());
+                            engine_view.store.set_selected_keys(&keys_to_add, true);
+                            selection.extend(keys_to_add);
                             if let Some(new_bounds) =
                                 engine_view.store.bounds_for_strokes(selection)
                             {
@@ -458,7 +462,10 @@ impl Selector {
                                 )
                                 .pop()
                         }) {
-                            vec![key]
+                            // Clicking a group member selects the whole group.
+                            // Only for a tap (a drag with a single element is
+                            // not possible, so this is always a click).
+                            engine_view.store.expand_hit_to_group(key)
                         } else {
                             vec![]
                         }
@@ -601,6 +608,27 @@ impl Selector {
                         }
                     }
                 }
+                KeyboardKey::Unicode('g') => {
+                    if modifier_keys.contains(&ModifierKey::KeyboardCtrl) {
+                        if modifier_keys.contains(&ModifierKey::KeyboardShift) {
+                            Self::ungroup_current_selection(engine_view, &mut widget_flags);
+                        } else {
+                            Self::group_current_selection(engine_view, &mut widget_flags);
+                        }
+
+                        EventResult {
+                            handled: true,
+                            propagate: EventPropagation::Stop,
+                            progress: PenProgress::InProgress,
+                        }
+                    } else {
+                        EventResult {
+                            handled: false,
+                            propagate: EventPropagation::Proceed,
+                            progress: PenProgress::InProgress,
+                        }
+                    }
+                }
                 _ => EventResult {
                     handled: false,
                     propagate: EventPropagation::Proceed,
@@ -611,6 +639,27 @@ impl Selector {
                 KeyboardKey::Unicode('a') => {
                     if modifier_keys.contains(&ModifierKey::KeyboardCtrl) {
                         self.select_all(engine_view, &mut widget_flags);
+
+                        EventResult {
+                            handled: true,
+                            propagate: EventPropagation::Stop,
+                            progress: PenProgress::InProgress,
+                        }
+                    } else {
+                        EventResult {
+                            handled: false,
+                            propagate: EventPropagation::Proceed,
+                            progress: PenProgress::InProgress,
+                        }
+                    }
+                }
+                KeyboardKey::Unicode('g') => {
+                    if modifier_keys.contains(&ModifierKey::KeyboardCtrl) {
+                        if modifier_keys.contains(&ModifierKey::KeyboardShift) {
+                            Self::ungroup_current_selection(engine_view, &mut widget_flags);
+                        } else {
+                            Self::group_current_selection(engine_view, &mut widget_flags);
+                        }
 
                         EventResult {
                             handled: true,
@@ -667,6 +716,27 @@ impl Selector {
                             widget_flags.store_modified = true;
 
                             widget_flags |= self.update_state(engine_view);
+
+                            EventResult {
+                                handled: true,
+                                propagate: EventPropagation::Stop,
+                                progress: PenProgress::InProgress,
+                            }
+                        } else {
+                            EventResult {
+                                handled: false,
+                                propagate: EventPropagation::Proceed,
+                                progress: PenProgress::InProgress,
+                            }
+                        }
+                    }
+                    KeyboardKey::Unicode('g') => {
+                        if modifier_keys.contains(&ModifierKey::KeyboardCtrl) {
+                            if modifier_keys.contains(&ModifierKey::KeyboardShift) {
+                                Self::ungroup_current_selection(engine_view, &mut widget_flags);
+                            } else {
+                                Self::group_current_selection(engine_view, &mut widget_flags);
+                            }
 
                             EventResult {
                                 handled: true,

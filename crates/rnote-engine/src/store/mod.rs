@@ -1,5 +1,6 @@
 // Modules
 pub mod chrono_comp;
+pub mod group_comp;
 pub mod keytree;
 pub mod render_comp;
 pub mod selection_comp;
@@ -12,6 +13,8 @@ use keytree::KeyTree;
 pub use render_comp::RenderComponent;
 pub use selection_comp::SelectionComponent;
 pub use trash_comp::TrashComponent;
+
+pub use group_comp::GroupComponent;
 
 // Imports
 use self::chrono_comp::StrokeLayer;
@@ -39,6 +42,10 @@ pub struct HistoryEntry {
     pub trash_components: Arc<SecondaryMap<StrokeKey, Arc<TrashComponent>>>,
     #[serde(rename = "chrono_components")]
     pub chrono_components: Arc<SecondaryMap<StrokeKey, Arc<ChronoComponent>>>,
+    #[serde(rename = "group_components")]
+    pub group_components: Arc<SecondaryMap<StrokeKey, Arc<GroupComponent>>>,
+    #[serde(rename = "group_id_counter")]
+    pub group_id_counter: u64,
     #[serde(rename = "chrono_counter")]
     pub chrono_counter: u32,
 }
@@ -49,7 +56,9 @@ impl Default for HistoryEntry {
             stroke_components: Arc::new(SlotMap::with_key()),
             trash_components: Arc::new(SecondaryMap::new()),
             chrono_components: Arc::new(SecondaryMap::new()),
+            group_components: Arc::new(SecondaryMap::new()),
 
+            group_id_counter: 0,
             chrono_counter: 0,
         }
     }
@@ -79,6 +88,11 @@ pub struct StrokeStore {
     selection_components: Arc<SecondaryMap<StrokeKey, Arc<SelectionComponent>>>,
     #[serde(rename = "chrono_components")]
     chrono_components: Arc<SecondaryMap<StrokeKey, Arc<ChronoComponent>>>,
+    #[serde(rename = "group_components")]
+    group_components: Arc<SecondaryMap<StrokeKey, Arc<GroupComponent>>>,
+    /// Incrementing counter for group ids. Ids are never reused.
+    #[serde(rename = "group_id_counter")]
+    group_id_counter: u64,
     /// Incrementing counter for chrono_components.
     ///
     /// Value must be kept equal to the [ChronoComponent] of the newest inserted or modified stroke.
@@ -105,6 +119,7 @@ impl Default for StrokeStore {
             trash_components: Arc::new(SecondaryMap::new()),
             selection_components: Arc::new(SecondaryMap::new()),
             chrono_components: Arc::new(SecondaryMap::new()),
+            group_components: Arc::new(SecondaryMap::new()),
             render_components: SecondaryMap::new(),
 
             // Start off with state in the history
@@ -113,6 +128,7 @@ impl Default for StrokeStore {
 
             key_tree: KeyTree::default(),
 
+            group_id_counter: 0,
             chrono_counter: 0,
         }
     }
@@ -132,6 +148,8 @@ impl StrokeStore {
         self.stroke_components = Arc::clone(&snapshot.stroke_components);
         self.chrono_components = Arc::clone(&snapshot.chrono_components);
         self.chrono_counter = snapshot.chrono_counter;
+        self.group_components = Arc::clone(&snapshot.group_components);
+        self.group_id_counter = snapshot.group_id_counter;
 
         self.update_geometry_for_strokes(&self.keys_unordered());
         self.rebuild_selection_components_slotmap();
@@ -158,6 +176,7 @@ impl StrokeStore {
         Arc::ptr_eq(&self.stroke_components, &history_entry.stroke_components)
             && Arc::ptr_eq(&self.trash_components, &history_entry.trash_components)
             && Arc::ptr_eq(&self.chrono_components, &history_entry.chrono_components)
+            && Arc::ptr_eq(&self.group_components, &history_entry.group_components)
             && self.chrono_counter == history_entry.chrono_counter
     }
 
@@ -167,6 +186,8 @@ impl StrokeStore {
             stroke_components: Arc::clone(&self.stroke_components),
             trash_components: Arc::clone(&self.trash_components),
             chrono_components: Arc::clone(&self.chrono_components),
+            group_components: Arc::clone(&self.group_components),
+            group_id_counter: self.group_id_counter,
             chrono_counter: self.chrono_counter,
         }
     }
@@ -176,6 +197,8 @@ impl StrokeStore {
         self.stroke_components = Arc::clone(&history_entry.stroke_components);
         self.trash_components = Arc::clone(&history_entry.trash_components);
         self.chrono_components = Arc::clone(&history_entry.chrono_components);
+        self.group_components = Arc::clone(&history_entry.group_components);
+        self.group_id_counter = history_entry.group_id_counter;
         self.chrono_counter = history_entry.chrono_counter;
 
         // Since we don't store the rtree in the history, we need to rebuild it.
@@ -345,6 +368,7 @@ impl StrokeStore {
         Arc::make_mut(&mut self.trash_components).remove(key);
         Arc::make_mut(&mut self.selection_components).remove(key);
         Arc::make_mut(&mut self.chrono_components).remove(key);
+        Arc::make_mut(&mut self.group_components).remove(key);
         self.render_components.remove(key);
 
         self.key_tree.remove_with_key(key);
@@ -359,8 +383,10 @@ impl StrokeStore {
         Arc::make_mut(&mut self.trash_components).clear();
         Arc::make_mut(&mut self.selection_components).clear();
         Arc::make_mut(&mut self.chrono_components).clear();
+        Arc::make_mut(&mut self.group_components).clear();
 
         self.chrono_counter = 0;
+        self.group_id_counter = 0;
         let widget_flags = self.clear_history(HistoryEntry::default());
 
         self.render_components.clear();

@@ -131,6 +131,9 @@ impl StrokeStore {
         self.translate_strokes(&new_selected, Stroke::IMPORT_OFFSET_DEFAULT);
         self.translate_strokes_images(&new_selected, Stroke::IMPORT_OFFSET_DEFAULT);
 
+        // The duplicates of a group form their own group under fresh ids.
+        self.regroup_duplicated(&old_selected, &new_selected);
+
         new_selected
     }
 

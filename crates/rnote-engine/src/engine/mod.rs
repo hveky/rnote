@@ -336,6 +336,8 @@ impl Engine {
             camera: self.camera.extract_snapshot_data(),
             stroke_components: Arc::clone(&store_history_entry.stroke_components),
             chrono_components: Arc::clone(&store_history_entry.chrono_components),
+            group_components: Arc::clone(&store_history_entry.group_components),
+            group_id_counter: store_history_entry.group_id_counter,
             chrono_counter: store_history_entry.chrono_counter,
         }
     }
@@ -823,6 +825,31 @@ impl Engine {
         self.store.set_trashed_keys(&selection_keys, true);
         self.current_pen_update_state()
             | self.doc_resize_autoexpand()
+            | self.record(Instant::now())
+            | self.update_rendering_current_viewport()
+    }
+
+    /// Groups the currently selected strokes into one group.
+    /// Selecting a member afterwards selects the whole group.
+    pub fn group_selection(&mut self) -> WidgetFlags {
+        let selection_keys = self.store.selection_keys_as_rendered();
+        if selection_keys.len() < 2 {
+            return WidgetFlags::default();
+        }
+        self.store.group_keys(&selection_keys);
+        self.current_pen_update_state()
+            | self.record(Instant::now())
+            | self.update_rendering_current_viewport()
+    }
+
+    /// Removes the group membership of the currently selected strokes.
+    pub fn ungroup_selection(&mut self) -> WidgetFlags {
+        let selection_keys = self.store.selection_keys_as_rendered();
+        if selection_keys.is_empty() {
+            return WidgetFlags::default();
+        }
+        self.store.ungroup_keys(&selection_keys);
+        self.current_pen_update_state()
             | self.record(Instant::now())
             | self.update_rendering_current_viewport()
     }
