@@ -117,6 +117,11 @@
       <default>[(b'./', 'folder-symbolic', 442479871, 'default')]</default>
       <summary>the workspaces entries list</summary>
     </key>
+    <key name="penpicker-buttons" type="as">
+      <default>['brush', 'shaper', 'typewriter', 'eraser', 'selector', 'tools', 'undo', 'redo']</default>
+      <summary>the visible pen picker buttons in display order</summary>
+      <description>The visible buttons of the bottom toolbar in display order. Buttons not listed are hidden. Valid ids: brush, shaper, typewriter, eraser, selector, tools, undo, redo.</description>
+    </key>
     <key name="autosave" type="b">
       <default>true</default>
       <summary>true when autosave is enabled</summary>

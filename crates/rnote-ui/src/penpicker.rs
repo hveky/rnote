@@ -2,6 +2,7 @@
 use crate::RnAppWindow;
 use gtk4::{
     Box, Button, CompositeTemplate, EventControllerLegacy, TemplateChild, ToggleButton, Widget,
+    gio,
     glib::{self, clone},
     prelude::*,
     subclass::prelude::*,
@@ -32,6 +33,8 @@ mod imp {
         pub(crate) undo_button: TemplateChild<Button>,
         #[template_child]
         pub(crate) redo_button: TemplateChild<Button>,
+        #[template_child]
+        pub(crate) separator: TemplateChild<gtk4::Separator>,
     }
 
     #[glib::object_subclass]
@@ -206,5 +209,140 @@ impl RnPenPicker {
                 }
             }
         ));
+    }
+
+    /// Maps a settings id to its widget. The six pen toggles and the
+    /// undo/redo buttons come from the template children.
+    pub(crate) fn widget_for_id(&self, id: &str) -> Option<Widget> {
+        let imp = self.imp();
+        Some(match id {
+            "brush" => imp.brush_toggle.get().upcast(),
+            "shaper" => imp.shaper_toggle.get().upcast(),
+            "typewriter" => imp.typewriter_toggle.get().upcast(),
+            "eraser" => imp.eraser_toggle.get().upcast(),
+            "selector" => imp.selector_toggle.get().upcast(),
+            "tools" => imp.tools_toggle.get().upcast(),
+            "undo" => imp.undo_button.get().upcast(),
+            "redo" => imp.redo_button.get().upcast(),
+            _ => return None,
+        })
+    }
+
+    /// Applies the button layout: reorders the listed ids into the toolbox
+    /// (and the separator between the pen toggles and undo/redo), hides the
+    /// buttons that are not listed.
+    pub(crate) fn apply_layout(&self, ids: &[String]) {
+        let imp = self.imp();
+
+        // Hide everything first, then show and order the listed ones.
+        for id in PENPICKER_BUTTON_IDS {
+            if let Some(widget) = self.widget_for_id(id) {
+                widget.set_visible(false);
+            }
+        }
+
+        let mut any_pen_toggle_visible = false;
+        let mut any_undo_redo_visible = false;
+
+        for id in ids {
+            let Some(widget) = self.widget_for_id(id) else {
+                continue;
+            };
+            widget.set_visible(true);
+
+            // Reorder into the toolbox. `append` reparents a widget that
+            // already has a parent; `reorder_child_after` with no sibling
+            // moves it to the end.
+            imp.toolbox.get().append(&widget);
+            imp.toolbox
+                .get()
+                .reorder_child_after(&widget, None::<&Widget>);
+
+            match id.as_str() {
+                "undo" | "redo" => any_undo_redo_visible = true,
+                _ => any_pen_toggle_visible = true,
+            }
+        }
+
+        // The separator goes after the last visible pen toggle, before the
+        // first visible undo/redo; it is hidden when either side is empty.
+        let separator = imp.separator.get();
+        separator.set_visible(any_pen_toggle_visible && any_undo_redo_visible);
+        imp.toolbox.get().append(&separator);
+        imp.toolbox
+            .get()
+            .reorder_child_after(&separator, None::<&Widget>);
+
+        // Re-append the undo/redo buttons after the separator.
+        for id in ids {
+            if (id == "undo" || id == "redo")
+                && let Some(widget) = self.widget_for_id(id)
+            {
+                imp.toolbox.get().append(&widget);
+                imp.toolbox
+                    .get()
+                    .reorder_child_after(&widget, Some(&separator));
+            }
+        }
+    }
+
+    /// Loads the pen picker button layout from the app settings.
+    pub(crate) fn load_from_settings(&self, settings: &gio::Settings) {
+        let ids: Vec<String> = settings
+            .strv("penpicker-buttons")
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        self.apply_layout(&sanitize_penpicker_ids(ids));
+    }
+}
+
+/// The fixed id set of all pen picker buttons.
+pub(crate) const PENPICKER_BUTTON_IDS: [&str; 8] = [
+    "brush",
+    "shaper",
+    "typewriter",
+    "eraser",
+    "selector",
+    "tools",
+    "undo",
+    "redo",
+];
+
+/// Drops unknown ids and duplicates, keeping the first occurrence's order.
+pub(crate) fn sanitize_penpicker_ids(ids: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    ids.into_iter()
+        .filter(|id| PENPICKER_BUTTON_IDS.contains(&id.as_str()) && seen.insert(id.clone()))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_penpicker_ids;
+
+    #[test]
+    fn sanitize_drops_unknown_and_duplicates() {
+        let ids = vec![
+            "brush".to_string(),
+            "nonexistent".to_string(),
+            "brush".to_string(),
+            "undo".to_string(),
+        ];
+        assert_eq!(sanitize_penpicker_ids(ids), vec!["brush", "undo"]);
+    }
+
+    #[test]
+    fn sanitize_keeps_default_order() {
+        let ids: Vec<String> = super::PENPICKER_BUTTON_IDS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(sanitize_penpicker_ids(ids.clone()), ids);
+    }
+
+    #[test]
+    fn sanitize_allows_empty() {
+        assert!(sanitize_penpicker_ids(vec![]).is_empty());
     }
 }

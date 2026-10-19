@@ -438,6 +438,13 @@ impl RnAppWindow {
         }
 
         {
+            // Pen picker (bottom toolbar) button layout
+            self.overlays()
+                .penpicker()
+                .load_from_settings(&app_settings);
+        }
+
+        {
             // Global config
             if let Err(err) = self.load_global_config_from_settings(&app_settings) {
                 error!(

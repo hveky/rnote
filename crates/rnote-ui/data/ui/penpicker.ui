@@ -80,7 +80,7 @@
       </object>
     </child>
     <child>
-      <object class="GtkSeparator"></object>
+      <object class="GtkSeparator" id="separator"></object>
     </child>
     <child>
       <object class="GtkBox">
