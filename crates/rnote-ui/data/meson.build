@@ -357,6 +357,7 @@ rnote_ui_gresources_ui_files = files(
     'ui/penmoderow.ui',
     'ui/penpicker.ui',
     'ui/penshortcutrow.ui',
+    'ui/penshortcutkeyboardrow.ui',
     'ui/penssidebar/brushpage.ui',
     'ui/penssidebar/eraserpage.ui',
     'ui/penssidebar/penssidebar.ui',

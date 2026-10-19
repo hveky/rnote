@@ -129,6 +129,26 @@ gets disabled.</property>
                     </child>
                   </object>
                 </child>
+                <!-- Bottom Toolbar Group -->
+                <child>
+                  <object class="AdwPreferencesGroup" id="bottom_toolbar_group">
+                    <property name="title" translatable="yes">Bottom Toolbar</property>
+                    <property name="description" translatable="yes">Choose which buttons are shown on the bottom toolbar and in which order.</property>
+                    <child>
+                      <object class="GtkBox" id="bottom_toolbar_buttons_list">
+                        <property name="orientation">vertical</property>
+                        <property name="spacing">6</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="bottom_toolbar_reset_button">
+                        <property name="label" translatable="yes">Reset to Default</property>
+                        <property name="halign">start</property>
+                        <property name="margin-top">6</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
                 <!-- Format Group -->
                 <child>
                   <object class="AdwPreferencesGroup" id="format_preferences_group">
@@ -514,11 +534,30 @@ two-finger long-press gesture</property>
                       <object class="RnPenShortcutRow" id="penshortcut_keyboard_ctrl_space_row">
                         <property name="title" translatable="yes">Keyboard Ctrl-Space Action</property>
                         <property name="subtitle" translatable="yes">Set the action for the keyboard
-Ctrl plus Space shortcut</property>
+Ctrl plus Space shortcut. Configure custom key combinations in "Keyboard Shortcuts" below.</property>
                         <child type="prefix">
                           <object class="GtkImage">
                             <property name="icon_name">keyboard-ctrl-space-shortcut-symbolic</property>
                             <property name="icon-size">large</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwPreferencesGroup" id="keyboard_shortcuts_group">
+                        <property name="title" translatable="yes">Keyboard Shortcuts</property>
+                        <property name="description" translatable="yes">Custom keyboard shortcuts to switch pens. Click a key button, then press the key combination.</property>
+                        <child>
+                          <object class="GtkBox" id="keyboard_shortcuts_list">
+                            <property name="orientation">vertical</property>
+                            <property name="spacing">6</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton" id="keyboard_shortcuts_add_button">
+                            <property name="label" translatable="yes">Add Keyboard Shortcut</property>
+                            <property name="halign">start</property>
+                            <property name="margin-top">6</property>
                           </object>
                         </child>
                       </object>

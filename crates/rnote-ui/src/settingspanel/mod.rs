@@ -1,10 +1,13 @@
 // Modules
+mod keybindingbutton;
 mod penmoderow;
+mod penshortcutkeyboardrow;
 mod penshortcutmodels;
 mod penshortcutrow;
 
 // Re-exports
 pub(crate) use penmoderow::RnPenModeRow;
+pub(crate) use penshortcutkeyboardrow::RnKeyboardShortcutRow;
 pub(crate) use penshortcutrow::RnPenShortcutRow;
 use rnote_compose::ext::Vector2Ext;
 
@@ -24,16 +27,19 @@ use rnote_engine::document::background::PatternStyle;
 use rnote_engine::document::format::{self, Format, PredefinedFormat};
 use rnote_engine::ext::GdkRGBAExt;
 use rnote_engine::pens::PenMode;
+use rnote_engine::pens::PenStyle;
+use rnote_engine::pens::shortcuts::{ShortcutAction, ShortcutMode};
 use std::cell::RefCell;
 
 mod imp {
     use super::*;
 
-    #[derive(Debug, Default, CompositeTemplate)]
+    #[derive(Default, CompositeTemplate)]
     #[template(resource = "/com/github/flxzt/rnote/ui/settingspanel.ui")]
     pub(crate) struct RnSettingsPanel {
         pub(crate) temporary_format: RefCell<Format>,
         pub(crate) app_restart_toast_singleton: RefCell<Option<adw::Toast>>,
+        pub(crate) rebuild_bottom_toolbar_rows: RefCell<Option<Box<dyn Fn()>>>,
 
         #[template_child]
         pub(crate) settings_scroller: TemplateChild<ScrolledWindow>,
@@ -110,6 +116,10 @@ mod imp {
         #[template_child]
         pub(crate) doc_background_pattern_height_unitentry: TemplateChild<RnUnitEntry>,
         #[template_child]
+        pub(crate) bottom_toolbar_buttons_list: TemplateChild<gtk4::Box>,
+        #[template_child]
+        pub(crate) bottom_toolbar_reset_button: TemplateChild<gtk4::Button>,
+        #[template_child]
         pub(crate) doc_show_origin_indicator_row: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub(crate) background_pattern_invert_color_button: TemplateChild<Button>,
@@ -123,6 +133,10 @@ mod imp {
         pub(crate) penshortcut_touch_two_finger_long_press_row: TemplateChild<RnPenShortcutRow>,
         #[template_child]
         pub(crate) penshortcut_keyboard_ctrl_space_row: TemplateChild<RnPenShortcutRow>,
+        #[template_child]
+        pub(crate) keyboard_shortcuts_list: TemplateChild<gtk4::Box>,
+        #[template_child]
+        pub(crate) keyboard_shortcuts_add_button: TemplateChild<gtk4::Button>,
         #[template_child]
         pub(crate) penshortcut_drawing_pad_button_0: TemplateChild<RnPenShortcutRow>,
         #[template_child]
@@ -536,7 +550,104 @@ impl RnSettingsPanel {
                 ShortcutKey::DrawingPadButton3 => {
                     imp.penshortcut_drawing_pad_button_3.set_action(action);
                 }
+                ShortcutKey::KeyboardCustom(_) => {
+                    // Custom keyboard shortcuts are rebuilt as a dynamic list
+                    // in `refresh_keyboard_shortcuts_list`.
+                }
             });
+
+        self.refresh_keyboard_shortcuts_list(appwindow);
+    }
+
+    /// Rebuilds the dynamic custom keyboard shortcut list from the current
+    /// shortcuts registered in the engine config.
+    fn refresh_keyboard_shortcuts_list(&self, appwindow: &RnAppWindow) {
+        let imp = self.imp();
+
+        while let Some(child) = imp.keyboard_shortcuts_list.get().first_child() {
+            imp.keyboard_shortcuts_list.get().remove(&child);
+        }
+
+        let custom_shortcuts: Vec<(rnote_compose::penevent::KeyBinding, ShortcutAction)> =
+            appwindow
+                .engine_config()
+                .read()
+                .pens_config
+                .list_current_shortcuts()
+                .into_iter()
+                .filter_map(|(key, action)| match key {
+                    ShortcutKey::KeyboardCustom(binding) => Some((binding, action)),
+                    _ => None,
+                })
+                .collect();
+
+        for (binding, action) in custom_shortcuts {
+            let row = RnKeyboardShortcutRow::new();
+            row.set_binding(Some(binding));
+            row.set_action(action);
+            self.setup_keyboard_shortcut_row(&row, appwindow);
+            imp.keyboard_shortcuts_list.get().append(&row);
+        }
+    }
+
+    /// Wires one custom keyboard shortcut row. Changes are applied directly to
+    /// the engine config, and the row is removed when its binding is cleared.
+    fn setup_keyboard_shortcut_row(&self, row: &RnKeyboardShortcutRow, appwindow: &RnAppWindow) {
+        let imp = self.imp();
+        let list = imp.keyboard_shortcuts_list.get();
+
+        row.connect_row_changed(clone!(
+            #[weak]
+            row,
+            #[weak]
+            appwindow,
+            #[weak]
+            list,
+            #[upgrade_or]
+            None,
+            move |_| {
+                let old_binding = row.binding();
+                let action = row.action();
+
+                // Apply the binding change to the engine config.
+                {
+                    let mut write = appwindow.engine_config().write();
+                    let pens_config = &mut write.pens_config;
+                    if let Some(old_binding) = old_binding {
+                        pens_config.remove_shortcut(ShortcutKey::KeyboardCustom(old_binding));
+                    }
+                    if let Some(new_binding) = row.keybinding_button().binding() {
+                        pens_config
+                            .register_shortcut(ShortcutKey::KeyboardCustom(new_binding), action);
+                    }
+                }
+
+                if row.keybinding_button().binding().is_none() {
+                    // Binding cleared via backspace: drop the row.
+                    list.remove(&row);
+                }
+                None
+            }
+        ));
+
+        row.delete_button().connect_clicked(clone!(
+            #[weak]
+            row,
+            #[weak]
+            appwindow,
+            #[weak]
+            list,
+            move |_| {
+                if let Some(binding) = row.binding() {
+                    appwindow
+                        .engine_config()
+                        .write()
+                        .pens_config
+                        .remove_shortcut(ShortcutKey::KeyboardCustom(binding));
+                }
+                list.remove(&row);
+            }
+        ));
     }
 
     fn refresh_lock_ui(&self, appwindow: &RnAppWindow) {
@@ -561,9 +672,192 @@ impl RnSettingsPanel {
 
     pub(crate) fn init(&self, appwindow: &RnAppWindow) {
         self.setup_general(appwindow);
+        self.setup_bottom_toolbar(appwindow);
         self.setup_format(appwindow);
         self.setup_doc(appwindow);
         self.setup_shortcuts(appwindow);
+    }
+
+    /// Builds the "Bottom Toolbar" settings group: one row per pen picker
+    /// button with a visibility checkbox and up/down ordering buttons. Changes
+    /// apply instantly to the pen picker and are persisted to gsettings.
+    fn setup_bottom_toolbar(&self, appwindow: &RnAppWindow) {
+        let imp = self.imp();
+        let Some(app_settings) = appwindow.app().app_settings() else {
+            return;
+        };
+        let app_settings_rebuild = app_settings.clone();
+        let app_settings_apply = app_settings.clone();
+        let app_settings_reset = app_settings.clone();
+
+        let penpicker = appwindow.overlays().penpicker();
+        let this = self.clone();
+
+        let rebuild_rows = clone!(
+            #[weak(rename_to = panel)]
+            this,
+            #[weak]
+            appwindow,
+            #[weak]
+            penpicker,
+            #[upgrade_or_panic]
+            move || {
+                let imp = panel.imp();
+                let ids: Vec<String> = app_settings_rebuild
+                    .strv("penpicker-buttons")
+                    .into_iter()
+                    .map(Into::into)
+                    .collect();
+                let ids = crate::penpicker::sanitize_penpicker_ids(ids);
+
+                // Rebuild the rows from the ordered ids.
+                while let Some(child) = imp.bottom_toolbar_buttons_list.get().first_child() {
+                    imp.bottom_toolbar_buttons_list.get().remove(&child);
+                }
+
+                let n = ids.len();
+                for (pos, id) in ids.iter().enumerate() {
+                    let Some(widget) = penpicker.widget_for_id(id) else {
+                        continue;
+                    };
+
+                    let row = adw::ActionRow::new();
+                    row.set_title(&{
+                        let tooltip = widget
+                            .first_child()
+                            .and_then(|c| c.downcast::<gtk4::ToggleButton>().ok())
+                            .map(|t| t.tooltip_text().unwrap_or_default());
+                        tooltip.unwrap_or_else(|| glib::GString::from(id.as_str()))
+                    });
+
+                    let icon_name = widget.first_child().and_then(|c| {
+                        let mut icon = None;
+                        let mut it = Some(c);
+                        while let Some(w) = it {
+                            if let Some(img) = w.downcast_ref::<gtk4::Image>() {
+                                icon = img.icon_name();
+                                break;
+                            }
+                            it = w.first_child();
+                        }
+                        icon
+                    });
+                    if let Some(icon_name) = icon_name {
+                        row.add_prefix(&gtk4::Image::from_icon_name(&icon_name));
+                    }
+
+                    let check = gtk4::CheckButton::new();
+                    check.set_active(true);
+                    row.add_suffix(&check);
+
+                    let up_btn = gtk4::Button::from_icon_name("dir-up-symbolic");
+                    let down_btn = gtk4::Button::from_icon_name("dir-down-symbolic");
+                    up_btn.set_valign(gtk4::Align::Center);
+                    down_btn.set_valign(gtk4::Align::Center);
+                    up_btn.set_sensitive(pos > 0);
+                    down_btn.set_sensitive(pos + 1 < n);
+                    row.add_suffix(&up_btn);
+                    row.add_suffix(&down_btn);
+
+                    // Unchecking removes the id from the list; up/down moves
+                    // it. Both rewrite gsettings and reapply the layout. The
+                    // apply closure is cloned per button (glib's clone! macro
+                    // cannot weak-capture a plain closure, so these are plain
+                    // move closures with weak-ref objects inside).
+                    let app_settings = app_settings_apply.clone();
+                    let this_for_apply = this.clone();
+                    let apply = clone!(
+                        #[weak(rename_to = panel)]
+                        this_for_apply,
+                        #[weak]
+                        appwindow,
+                        #[weak]
+                        penpicker,
+                        #[upgrade_or_panic]
+                        move |new_ids: Vec<String>| {
+                            let new_ids = crate::penpicker::sanitize_penpicker_ids(new_ids);
+                            let _ = app_settings.set_strv("penpicker-buttons", new_ids.clone());
+                            penpicker.apply_layout(&new_ids);
+                            panel.rebuild_bottom_toolbar_rows(&appwindow);
+                        }
+                    );
+
+                    let ids_for_check = ids.clone();
+                    let id_for_check = id.clone();
+                    let apply_for_check = apply.clone();
+                    check.connect_toggled(move |check| {
+                        let mut new_ids = ids_for_check.clone();
+                        if check.is_active() {
+                            // Re-add at the end.
+                            new_ids.push(id_for_check.clone());
+                        } else {
+                            new_ids.retain(|i| i != &id_for_check);
+                        }
+                        apply_for_check(new_ids);
+                    });
+
+                    let ids_for_up = ids.clone();
+                    let id_for_up = id.clone();
+                    let apply_for_up = apply.clone();
+                    up_btn.connect_clicked(move |_| {
+                        let mut new_ids = ids_for_up.clone();
+                        if let Some(pos) = new_ids.iter().position(|i| i == &id_for_up)
+                            && pos > 0
+                        {
+                            new_ids.swap(pos - 1, pos);
+                            apply_for_up(new_ids);
+                        }
+                    });
+
+                    let ids_for_down = ids.clone();
+                    let id_for_down = id.clone();
+                    let apply_for_down = apply.clone();
+                    down_btn.connect_clicked(move |_| {
+                        let mut new_ids = ids_for_down.clone();
+                        if let Some(pos) = new_ids.iter().position(|i| i == &id_for_down)
+                            && pos + 1 < new_ids.len()
+                        {
+                            new_ids.swap(pos, pos + 1);
+                            apply_for_down(new_ids);
+                        }
+                    });
+
+                    imp.bottom_toolbar_buttons_list.get().append(&row);
+                }
+            }
+        );
+
+        let this_for_reset = self.clone();
+        imp.bottom_toolbar_reset_button.connect_clicked(clone!(
+            #[weak]
+            penpicker,
+            #[weak(rename_to = panel)]
+            this_for_reset,
+            #[weak]
+            appwindow,
+            move |_| {
+                let default_ids: Vec<String> = crate::penpicker::PENPICKER_BUTTON_IDS
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
+                let _ = app_settings_reset.set_strv("penpicker-buttons", default_ids.clone());
+                penpicker.apply_layout(&default_ids);
+                panel.rebuild_bottom_toolbar_rows(&appwindow);
+            }
+        ));
+
+        self.imp()
+            .rebuild_bottom_toolbar_rows
+            .replace(Some(Box::new(rebuild_rows)));
+        self.rebuild_bottom_toolbar_rows(appwindow);
+    }
+
+    /// Invokes the stored row-rebuilding closure, if set.
+    fn rebuild_bottom_toolbar_rows(&self, _appwindow: &RnAppWindow) {
+        let rebuild = self.imp().rebuild_bottom_toolbar_rows.borrow();
+        if let Some(f) = rebuild.as_ref() {
+            f();
+        }
     }
 
     fn setup_general(&self, appwindow: &RnAppWindow) {
@@ -1344,15 +1638,53 @@ impl RnSettingsPanel {
                 None,
                 move |_values| {
                     let action = penshortcut_keyboard_ctrl_space_row.action();
-                    appwindow
+                    // Only register when a legacy entry is still present;
+                    // after migration this shortcut lives in KeyboardCustom.
+                    if appwindow
                         .engine_config()
-                        .write()
+                        .read()
                         .pens_config
-                        .register_shortcut(ShortcutKey::KeyboardCtrlSpace, action);
+                        .get_shortcut_action(ShortcutKey::KeyboardCtrlSpace)
+                        .is_some()
+                    {
+                        appwindow
+                            .engine_config()
+                            .write()
+                            .pens_config
+                            .register_shortcut(ShortcutKey::KeyboardCtrlSpace, action);
+                    }
                     None
                 }
             ),
         );
+
+        imp.keyboard_shortcuts_add_button.connect_clicked(clone!(
+            #[weak(rename_to = panel)]
+            self,
+            #[weak]
+            appwindow,
+            move |_| {
+                let imp = panel.imp();
+                // Cap the number of custom keyboard shortcuts.
+                let current_count = imp
+                    .keyboard_shortcuts_list
+                    .get()
+                    .observe_children()
+                    .n_items();
+                if current_count >= 8 {
+                    return;
+                }
+
+                let row = RnKeyboardShortcutRow::new();
+                row.set_binding(None);
+                row.set_action(ShortcutAction::ChangePenStyle {
+                    style: PenStyle::Brush,
+                    mode: ShortcutMode::Permanent,
+                });
+                panel.setup_keyboard_shortcut_row(&row, &appwindow);
+                imp.keyboard_shortcuts_list.get().append(&row);
+            }
+        ));
 
         imp.penshortcut_drawing_pad_button_0.connect_local(
             "action-changed",

@@ -79,6 +79,8 @@ rnote_ui_sources = files(
     'settingspanel/penmoderow.rs',
     'settingspanel/penshortcutmodels.rs',
     'settingspanel/penshortcutrow.rs',
+    'settingspanel/penshortcutkeyboardrow.rs',
+    'settingspanel/keybindingbutton.rs',
     'sidebar.rs',
     'strokecontentpaintable.rs',
     'strokecontentpreview.rs',
