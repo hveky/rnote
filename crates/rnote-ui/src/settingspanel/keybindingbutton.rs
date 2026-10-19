@@ -61,11 +61,8 @@ mod imp {
             ));
         }
 
-        fn dispose(&self) {
-            while let Some(child) = self.obj().first_child() {
-                child.unparent();
-            }
-        }
+        // No `dispose` override: the button's children are managed by GTK
+        // itself, and manually unparenting them hits freed pointers.
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: Lazy<Vec<Signal>> =

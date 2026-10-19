@@ -116,7 +116,7 @@ mod imp {
         #[template_child]
         pub(crate) doc_background_pattern_height_unitentry: TemplateChild<RnUnitEntry>,
         #[template_child]
-        pub(crate) bottom_toolbar_buttons_list: TemplateChild<gtk4::Box>,
+        pub(crate) bottom_toolbar_buttons_list: TemplateChild<gtk4::ListBox>,
         #[template_child]
         pub(crate) bottom_toolbar_reset_button: TemplateChild<gtk4::Button>,
         #[template_child]
@@ -134,7 +134,7 @@ mod imp {
         #[template_child]
         pub(crate) penshortcut_keyboard_ctrl_space_row: TemplateChild<RnPenShortcutRow>,
         #[template_child]
-        pub(crate) keyboard_shortcuts_list: TemplateChild<gtk4::Box>,
+        pub(crate) keyboard_shortcuts_list: TemplateChild<gtk4::ListBox>,
         #[template_child]
         pub(crate) keyboard_shortcuts_add_button: TemplateChild<gtk4::Button>,
         #[template_child]

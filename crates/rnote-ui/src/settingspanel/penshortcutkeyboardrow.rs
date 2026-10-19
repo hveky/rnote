@@ -139,10 +139,9 @@ mod imp {
         }
 
         fn dispose(&self) {
+            // `dispose_template` unparents the template children; do not
+            // unparent them again manually here, that hits freed pointers.
             self.dispose_template();
-            while let Some(child) = self.obj().first_child() {
-                child.unparent();
-            }
         }
 
         fn signals() -> &'static [Signal] {

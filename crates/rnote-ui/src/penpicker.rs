@@ -233,6 +233,7 @@ impl RnPenPicker {
     /// buttons that are not listed.
     pub(crate) fn apply_layout(&self, ids: &[String]) {
         let imp = self.imp();
+        let toolbox = imp.toolbox.get();
 
         // Hide everything first, then show and order the listed ones.
         for id in PENPICKER_BUTTON_IDS {
@@ -240,6 +241,13 @@ impl RnPenPicker {
                 widget.set_visible(false);
             }
         }
+
+        let move_into_toolbox = |widget: &Widget| {
+            if widget.parent().is_some() {
+                widget.unparent();
+            }
+            toolbox.append(widget);
+        };
 
         let mut any_pen_toggle_visible = false;
         let mut any_undo_redo_visible = false;
@@ -249,14 +257,7 @@ impl RnPenPicker {
                 continue;
             };
             widget.set_visible(true);
-
-            // Reorder into the toolbox. `append` reparents a widget that
-            // already has a parent; `reorder_child_after` with no sibling
-            // moves it to the end.
-            imp.toolbox.get().append(&widget);
-            imp.toolbox
-                .get()
-                .reorder_child_after(&widget, None::<&Widget>);
+            move_into_toolbox(&widget);
 
             match id.as_str() {
                 "undo" | "redo" => any_undo_redo_visible = true,
@@ -268,20 +269,16 @@ impl RnPenPicker {
         // first visible undo/redo; it is hidden when either side is empty.
         let separator = imp.separator.get();
         separator.set_visible(any_pen_toggle_visible && any_undo_redo_visible);
-        imp.toolbox.get().append(&separator);
-        imp.toolbox
-            .get()
-            .reorder_child_after(&separator, None::<&Widget>);
+        move_into_toolbox(separator.upcast_ref());
+        toolbox.reorder_child_after(&separator, None::<&Widget>);
 
         // Re-append the undo/redo buttons after the separator.
         for id in ids {
             if (id == "undo" || id == "redo")
                 && let Some(widget) = self.widget_for_id(id)
             {
-                imp.toolbox.get().append(&widget);
-                imp.toolbox
-                    .get()
-                    .reorder_child_after(&widget, Some(&separator));
+                move_into_toolbox(&widget);
+                toolbox.reorder_child_after(&widget, Some(&separator));
             }
         }
     }
