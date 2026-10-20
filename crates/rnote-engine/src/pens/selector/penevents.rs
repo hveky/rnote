@@ -97,22 +97,12 @@ impl Selector {
                                 .unwrap_or(false)
                         {
                             // Adding a group member selects the whole group.
-                            // Filter out members that are already selected so
-                            // keys stay unique (duplicates would transform
-                            // strokes twice).
-                            let keys_to_add = engine_view
-                                .store
-                                .expand_hit_to_group(key_to_add.unwrap())
-                                .into_iter()
-                                .filter(|&k| !selection.contains(&k))
-                                .collect::<Vec<StrokeKey>>();
-                            engine_view.store.set_selected_keys(&keys_to_add, true);
-                            selection.extend(keys_to_add);
-                            if let Some(new_bounds) =
-                                engine_view.store.bounds_for_strokes(selection)
-                            {
-                                *selection_bounds = new_bounds;
-                            }
+                            Self::add_group_hit_to_selection(
+                                key_to_add.unwrap(),
+                                selection,
+                                selection_bounds,
+                                engine_view,
+                            );
                         } else if Self::rotate_node_sphere(*selection_bounds, engine_view.camera)
                             .contains_local_point(element.pos)
                         {
@@ -189,22 +179,12 @@ impl Selector {
                             // defer the [SelectorStyle::Single] after checking whether we are
                             // clicking on a selection node.
                             // Adding a group member selects the whole group.
-                            // Filter out members that are already selected so
-                            // keys stay unique (duplicates would transform
-                            // strokes twice).
-                            let keys_to_add = engine_view
-                                .store
-                                .expand_hit_to_group(key_to_add.unwrap())
-                                .into_iter()
-                                .filter(|&k| !selection.contains(&k))
-                                .collect::<Vec<StrokeKey>>();
-                            engine_view.store.set_selected_keys(&keys_to_add, true);
-                            selection.extend(keys_to_add);
-                            if let Some(new_bounds) =
-                                engine_view.store.bounds_for_strokes(selection)
-                            {
-                                *selection_bounds = new_bounds;
-                            }
+                            Self::add_group_hit_to_selection(
+                                key_to_add.unwrap(),
+                                selection,
+                                selection_bounds,
+                                engine_view,
+                            );
                         } else if selection_bounds.contains_local_point(element.pos) {
                             let snap_corner =
                                 SnapCorner::determine_from_bounds(*selection_bounds, element.pos);
@@ -458,13 +438,10 @@ impl Selector {
                             && let Some(last) = path.last()
                         {
                             let aabb = Aabb::new_positive(first.pos, last.pos);
-                            let hits = engine_view
-                                .store
-                                .strokes_hitboxes_contained_in_aabb(
-                                    aabb,
-                                    engine_view.camera.viewport(),
-                                )
-                                .to_vec();
+                            let hits = engine_view.store.strokes_hitboxes_contained_in_aabb(
+                                aabb,
+                                engine_view.camera.viewport(),
+                            );
                             if !hits.is_empty() {
                                 hits
                             } else {
@@ -652,25 +629,7 @@ impl Selector {
                     }
                 }
                 KeyboardKey::Unicode('g') => {
-                    if modifier_keys.contains(&ModifierKey::KeyboardCtrl) {
-                        if modifier_keys.contains(&ModifierKey::KeyboardShift) {
-                            Self::ungroup_current_selection(engine_view, &mut widget_flags);
-                        } else {
-                            Self::group_current_selection(engine_view, &mut widget_flags);
-                        }
-
-                        EventResult {
-                            handled: true,
-                            propagate: EventPropagation::Stop,
-                            progress: PenProgress::InProgress,
-                        }
-                    } else {
-                        EventResult {
-                            handled: false,
-                            propagate: EventPropagation::Proceed,
-                            progress: PenProgress::InProgress,
-                        }
-                    }
+                    Self::handle_group_shortcut(&modifier_keys, engine_view, &mut widget_flags)
                 }
                 _ => EventResult {
                     handled: false,
@@ -697,25 +656,7 @@ impl Selector {
                     }
                 }
                 KeyboardKey::Unicode('g') => {
-                    if modifier_keys.contains(&ModifierKey::KeyboardCtrl) {
-                        if modifier_keys.contains(&ModifierKey::KeyboardShift) {
-                            Self::ungroup_current_selection(engine_view, &mut widget_flags);
-                        } else {
-                            Self::group_current_selection(engine_view, &mut widget_flags);
-                        }
-
-                        EventResult {
-                            handled: true,
-                            propagate: EventPropagation::Stop,
-                            progress: PenProgress::InProgress,
-                        }
-                    } else {
-                        EventResult {
-                            handled: false,
-                            propagate: EventPropagation::Proceed,
-                            progress: PenProgress::InProgress,
-                        }
-                    }
+                    Self::handle_group_shortcut(&modifier_keys, engine_view, &mut widget_flags)
                 }
                 _ => EventResult {
                     handled: false,
@@ -774,25 +715,7 @@ impl Selector {
                         }
                     }
                     KeyboardKey::Unicode('g') => {
-                        if modifier_keys.contains(&ModifierKey::KeyboardCtrl) {
-                            if modifier_keys.contains(&ModifierKey::KeyboardShift) {
-                                Self::ungroup_current_selection(engine_view, &mut widget_flags);
-                            } else {
-                                Self::group_current_selection(engine_view, &mut widget_flags);
-                            }
-
-                            EventResult {
-                                handled: true,
-                                propagate: EventPropagation::Stop,
-                                progress: PenProgress::InProgress,
-                            }
-                        } else {
-                            EventResult {
-                                handled: false,
-                                propagate: EventPropagation::Proceed,
-                                progress: PenProgress::InProgress,
-                            }
-                        }
+                        Self::handle_group_shortcut(&modifier_keys, engine_view, &mut widget_flags)
                     }
                     KeyboardKey::Delete | KeyboardKey::BackSpace => {
                         engine_view.store.set_trashed_keys(selection, true);

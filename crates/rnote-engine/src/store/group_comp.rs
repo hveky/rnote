@@ -30,13 +30,16 @@ impl StrokeStore {
             return Vec::new();
         };
 
-        self.keys_sorted_chrono()
-            .into_iter()
+        let mut members: Vec<StrokeKey> = self
+            .stroke_components
+            .keys()
             .filter(|&k| {
                 !(self.trashed(k).unwrap_or(false))
                     && self.group_id_of(k).is_some_and(|id| id == group_id)
             })
-            .collect()
+            .collect();
+        self.sort_keys_chrono(&mut members);
+        members
     }
 
     /// Puts all given strokes into one new group and returns the new group id.

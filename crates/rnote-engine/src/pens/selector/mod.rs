@@ -18,11 +18,13 @@ use p2d::math::Vector2;
 use p2d::query::PointQuery;
 use piet::RenderContext;
 use rnote_compose::EventResult;
+use rnote_compose::eventresult::EventPropagation;
 use rnote_compose::ext::{AabbExt, Vector2Ext};
-use rnote_compose::penevent::{PenEvent, PenProgress, PenState};
+use rnote_compose::penevent::{ModifierKey, PenEvent, PenProgress, PenState};
 use rnote_compose::penpath::Element;
 use rnote_compose::style::indicators;
 use rnote_compose::{Color, color};
+use std::collections::HashSet;
 use std::time::Instant;
 use tracing::error;
 
@@ -814,20 +816,55 @@ impl Selector {
         *widget_flags |= self.update_state(engine_view);
     }
 
-    /// Groups the current selection into one group (Ctrl+G). Works on the
-    /// store selection, so it is independent of the selector state. The
-    /// selection itself is unchanged, only its grouping. No-op with fewer
-    /// than 2 selected strokes.
-    fn group_current_selection(
+    /// Handles the Ctrl+G (group) / Ctrl+Shift+G (ungroup) shortcuts.
+    /// Grouping works on the store selection, so it is independent of the
+    /// selector state.
+    fn handle_group_shortcut(
+        modifier_keys: &HashSet<ModifierKey>,
+        engine_view: &mut EngineViewMut,
+        widget_flags: &mut WidgetFlags,
+    ) -> EventResult<PenProgress> {
+        if !modifier_keys.contains(&ModifierKey::KeyboardCtrl) {
+            return EventResult {
+                handled: false,
+                propagate: EventPropagation::Proceed,
+                progress: PenProgress::InProgress,
+            };
+        }
+
+        if modifier_keys.contains(&ModifierKey::KeyboardShift) {
+            Self::apply_grouping_to_selection(true, engine_view, widget_flags);
+        } else {
+            Self::apply_grouping_to_selection(false, engine_view, widget_flags);
+        }
+
+        EventResult {
+            handled: true,
+            propagate: EventPropagation::Stop,
+            progress: PenProgress::InProgress,
+        }
+    }
+
+    /// Groups (`ungroup == false`) or ungroups the current selection. The
+    /// selection itself is unchanged, only its grouping. No-op when there
+    /// are fewer than the required strokes selected (2 for grouping, 1 for
+    /// ungrouping).
+    fn apply_grouping_to_selection(
+        ungroup: bool,
         engine_view: &mut EngineViewMut,
         widget_flags: &mut WidgetFlags,
     ) {
         let selection_keys = engine_view.store.selection_keys_as_rendered();
-        if selection_keys.len() < 2 {
+        let min_keys = if ungroup { 1 } else { 2 };
+        if selection_keys.len() < min_keys {
             return;
         }
 
-        engine_view.store.group_keys(&selection_keys);
+        if ungroup {
+            engine_view.store.ungroup_keys(&selection_keys);
+        } else {
+            engine_view.store.group_keys(&selection_keys);
+        }
 
         *widget_flags |= engine_view.store.record(Instant::now());
         widget_flags.redraw = true;
@@ -835,23 +872,27 @@ impl Selector {
         widget_flags.store_modified = true;
     }
 
-    /// Ungroups the current selection (Ctrl+Shift+G). No-op without selected
-    /// strokes.
-    fn ungroup_current_selection(
+    /// Adds the whole group of the hit stroke to the selection, filtering
+    /// out members that are already selected so keys stay unique
+    /// (duplicates would transform strokes twice), and updates the
+    /// selection bounds.
+    fn add_group_hit_to_selection(
+        key_to_add: StrokeKey,
+        selection: &mut Vec<StrokeKey>,
+        selection_bounds: &mut Aabb,
         engine_view: &mut EngineViewMut,
-        widget_flags: &mut WidgetFlags,
     ) {
-        let selection_keys = engine_view.store.selection_keys_as_rendered();
-        if selection_keys.is_empty() {
-            return;
+        let keys_to_add = engine_view
+            .store
+            .expand_hit_to_group(key_to_add)
+            .into_iter()
+            .filter(|&k| !selection.contains(&k))
+            .collect::<Vec<StrokeKey>>();
+        engine_view.store.set_selected_keys(&keys_to_add, true);
+        selection.extend(keys_to_add);
+        if let Some(new_bounds) = engine_view.store.bounds_for_strokes(selection) {
+            *selection_bounds = new_bounds;
         }
-
-        engine_view.store.ungroup_keys(&selection_keys);
-
-        *widget_flags |= engine_view.store.record(Instant::now());
-        widget_flags.redraw = true;
-        widget_flags.resize = true;
-        widget_flags.store_modified = true;
     }
 }
 

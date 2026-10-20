@@ -668,21 +668,8 @@ fn shape_builder_type_icons_get_groups() -> Vec<GroupedIconPickerGroupData> {
 }
 
 fn shape_builder_type_icons_to_display_name(icon_name: &str) -> String {
-    match ShapeBuilderType::from_icon_name(icon_name)
-        .expect("ShapeBuilderTypePicker failed, display name of unknown icon name requested")
-    {
-        ShapeBuilderType::Arrow => gettext("Arrow"),
-        ShapeBuilderType::Line => gettext("Line"),
-        ShapeBuilderType::Rectangle => gettext("Rectangle"),
-        ShapeBuilderType::Grid => gettext("Grid"),
-        ShapeBuilderType::CoordSystem2D => gettext("2D coordinate system"),
-        ShapeBuilderType::CoordSystem3D => gettext("3D coordinate system"),
-        ShapeBuilderType::QuadrantCoordSystem2D => gettext("2D single quadrant coordinate system"),
-        ShapeBuilderType::Ellipse => gettext("Ellipse"),
-        ShapeBuilderType::FociEllipse => gettext("Ellipse with foci"),
-        ShapeBuilderType::QuadBez => gettext("Quadratic bezier curve"),
-        ShapeBuilderType::CubBez => gettext("Cubic bezier curve"),
-        ShapeBuilderType::Polyline => gettext("Polyline"),
-        ShapeBuilderType::Polygon => gettext("Polygon"),
-    }
+    crate::settingspanel::penshortcutmodels::shape_builder_display_name(
+        ShapeBuilderType::from_icon_name(icon_name)
+            .expect("ShapeBuilderTypePicker failed, display name of unknown icon name requested"),
+    )
 }

@@ -249,10 +249,6 @@ impl RnPenPicker {
             toolbox.append(widget);
         };
 
-        let any_undo_redo_visible = ids
-            .iter()
-            .any(|id| id == "undo" || id == "redo");
-
         // Append the listed buttons in exactly the saved order, inserting
         // the separator right before the first visible undo/redo button.
         let mut any_pen_toggle_visible = false;
@@ -263,7 +259,6 @@ impl RnPenPicker {
             if (id == "undo" || id == "redo")
                 && !separator_placed
                 && any_pen_toggle_visible
-                && any_undo_redo_visible
             {
                 separator.set_visible(true);
                 move_into_toolbox(separator.upcast_ref());

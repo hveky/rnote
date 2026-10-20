@@ -155,14 +155,6 @@ impl Default for Shortcuts {
 }
 
 /// Lowercase letter keyvals for the Excalidraw-style default shortcuts.
-const KEYVAL_V: u32 = 0x76;
-const KEYVAL_R: u32 = 0x72;
-const KEYVAL_O: u32 = 0x6f;
-const KEYVAL_A: u32 = 0x61;
-const KEYVAL_L: u32 = 0x6c;
-const KEYVAL_T: u32 = 0x74;
-const KEYVAL_E: u32 = 0x65;
-
 /// The Excalidraw-style letter shortcuts: V selector, R rectangle, O ellipse,
 /// A arrow, L line, T typewriter, E eraser. No modifiers.
 fn excalidraw_default_shortcuts() -> Vec<(KeyBinding, ShortcutAction)> {
@@ -183,13 +175,25 @@ fn excalidraw_default_shortcuts() -> Vec<(KeyBinding, ShortcutAction)> {
     };
 
     vec![
-        (key(KEYVAL_V), style(PenStyle::Selector)),
-        (key(KEYVAL_R), switch(PenStyle::Shaper, Some(ShapeBuilderType::Rectangle))),
-        (key(KEYVAL_O), switch(PenStyle::Shaper, Some(ShapeBuilderType::Ellipse))),
-        (key(KEYVAL_A), switch(PenStyle::Shaper, Some(ShapeBuilderType::Arrow))),
-        (key(KEYVAL_L), switch(PenStyle::Shaper, Some(ShapeBuilderType::Line))),
-        (key(KEYVAL_T), style(PenStyle::Typewriter)),
-        (key(KEYVAL_E), style(PenStyle::Eraser)),
+        (key(b'v' as u32), style(PenStyle::Selector)),
+        (
+            key(b'r' as u32),
+            switch(PenStyle::Shaper, Some(ShapeBuilderType::Rectangle)),
+        ),
+        (
+            key(b'o' as u32),
+            switch(PenStyle::Shaper, Some(ShapeBuilderType::Ellipse)),
+        ),
+        (
+            key(b'a' as u32),
+            switch(PenStyle::Shaper, Some(ShapeBuilderType::Arrow)),
+        ),
+        (
+            key(b'l' as u32),
+            switch(PenStyle::Shaper, Some(ShapeBuilderType::Line)),
+        ),
+        (key(b't' as u32), style(PenStyle::Typewriter)),
+        (key(b'e' as u32), style(PenStyle::Eraser)),
     ]
 }
 

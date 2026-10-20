@@ -2,7 +2,7 @@
 mod keybindingbutton;
 mod penmoderow;
 mod penshortcutkeyboardrow;
-mod penshortcutmodels;
+pub(crate) mod penshortcutmodels;
 mod penshortcutrow;
 
 // Re-exports
@@ -40,7 +40,6 @@ mod imp {
     pub(crate) struct RnSettingsPanel {
         pub(crate) temporary_format: RefCell<Format>,
         pub(crate) app_restart_toast_singleton: RefCell<Option<adw::Toast>>,
-        pub(crate) rebuild_bottom_toolbar_rows: RefCell<Option<Box<dyn Fn()>>>,
 
         #[template_child]
         pub(crate) settings_scroller: TemplateChild<ScrolledWindow>,
@@ -684,171 +683,9 @@ impl RnSettingsPanel {
     /// apply instantly to the pen picker and are persisted to gsettings.
     fn setup_bottom_toolbar(&self, appwindow: &RnAppWindow) {
         let imp = self.imp();
-        let Some(app_settings) = appwindow.app().app_settings() else {
-            return;
-        };
-        let app_settings_rebuild = app_settings.clone();
-        let app_settings_apply = app_settings.clone();
-        let app_settings_reset = app_settings.clone();
-
         let penpicker = appwindow.overlays().penpicker();
-        let this = self.clone();
-
-        let rebuild_rows = clone!(
-            #[weak(rename_to = panel)]
-            this,
-            #[weak]
-            appwindow,
-            #[weak]
-            penpicker,
-            #[upgrade_or_panic]
-            move || {
-                let imp = panel.imp();
-                let ids: Vec<String> = app_settings_rebuild
-                    .strv("penpicker-buttons")
-                    .into_iter()
-                    .map(Into::into)
-                    .collect();
-                let ids = crate::penpicker::sanitize_penpicker_ids(ids);
-
-                // Rebuild from scratch: drop previous rows (and their stale
-                // captured ids/callbacks) first.
-                while let Some(child) = imp.bottom_toolbar_buttons_list.get().first_child() {
-                    imp.bottom_toolbar_buttons_list.get().remove(&child);
-                }
-
-                // One row per known button, so that an unchecked (hidden)
-                // button keeps its row and can be re-checked. Visible rows
-                // come first in the saved order, hidden ones after.
-                let n = ids.len();
-                let rows: Vec<(&str, Option<usize>)> = crate::penpicker::PENPICKER_BUTTON_IDS
-                    .iter()
-                    .map(|id| (*id, ids.iter().position(|i| i == id)))
-                    .collect();
-                let rows = rows
-                    .iter()
-                    .filter(|(_, pos)| pos.is_some())
-                    .copied()
-                    // Visible rows in the saved order.
-                    .enumerate()
-                    .collect::<Vec<(usize, _)>>()
-                    .into_iter()
-                    .sorted_by_key(|(i, (_, pos))| (*pos, *i))
-                    .map(|(_, (id, pos))| (id, pos))
-                    .chain(rows.iter().filter(|(_, pos)| pos.is_none()).copied());
-                for (id, pos) in rows {
-                    let Some(widget) = penpicker.widget_for_id(id) else {
-                        continue;
-                    };
-
-                    let row = adw::ActionRow::new();
-                    row.set_title(&{
-                        let tooltip = widget
-                            .first_child()
-                            .and_then(|c| c.downcast::<gtk4::ToggleButton>().ok())
-                            .map(|t| t.tooltip_text().unwrap_or_default());
-                        tooltip.unwrap_or_else(|| glib::GString::from(id))
-                    });
-
-                    let icon_name = widget.first_child().and_then(|c| {
-                        let mut icon = None;
-                        let mut it = Some(c);
-                        while let Some(w) = it {
-                            if let Some(img) = w.downcast_ref::<gtk4::Image>() {
-                                icon = img.icon_name();
-                                break;
-                            }
-                            it = w.first_child();
-                        }
-                        icon
-                    });
-                    if let Some(icon_name) = icon_name {
-                        row.add_prefix(&gtk4::Image::from_icon_name(&icon_name));
-                    }
-
-                    let present = pos.is_some();
-                    let check = gtk4::CheckButton::new();
-                    check.set_active(present);
-                    row.add_suffix(&check);
-
-                    let up_btn = gtk4::Button::from_icon_name("dir-up-symbolic");
-                    let down_btn = gtk4::Button::from_icon_name("dir-down-symbolic");
-                    up_btn.set_valign(gtk4::Align::Center);
-                    down_btn.set_valign(gtk4::Align::Center);
-                    up_btn.set_sensitive(present && pos.is_some_and(|p| p > 0));
-                    down_btn.set_sensitive(present && pos.is_some_and(|p| p + 1 < n));
-                    row.add_suffix(&up_btn);
-                    row.add_suffix(&down_btn);
-
-                    // Unchecking removes the id from the list; up/down moves
-                    // it. Both rewrite gsettings and reapply the layout. The
-                    // apply closure is cloned per button (glib's clone! macro
-                    // cannot weak-capture a plain closure, so these are plain
-                    // move closures with weak-ref objects inside).
-                    let app_settings = app_settings_apply.clone();
-                    let this_for_apply = this.clone();
-                    let apply = clone!(
-                        #[weak(rename_to = panel)]
-                        this_for_apply,
-                        #[weak]
-                        appwindow,
-                        #[weak]
-                        penpicker,
-                        #[upgrade_or_panic]
-                        move |new_ids: Vec<String>| {
-                            let new_ids = crate::penpicker::sanitize_penpicker_ids(new_ids);
-                            let _ = app_settings.set_strv("penpicker-buttons", new_ids.clone());
-                            penpicker.apply_layout(&new_ids);
-                            panel.rebuild_bottom_toolbar_rows(&appwindow);
-                        }
-                    );
-
-                    let ids_for_check = ids.clone();
-                    let id_for_check = id;
-                    let apply_for_check = apply.clone();
-                    check.connect_toggled(move |check| {
-                        let mut new_ids = ids_for_check.clone();
-                        if check.is_active() {
-                            // Re-add at the end.
-                            new_ids.push(id_for_check.to_string());
-                        } else {
-                            new_ids.retain(|i| *i != id_for_check);
-                        }
-                        apply_for_check(new_ids);
-                    });
-
-                    let ids_for_up = ids.clone();
-                    let id_for_up = id;
-                    let apply_for_up = apply.clone();
-                    up_btn.connect_clicked(move |_| {
-                        let mut new_ids = ids_for_up.clone();
-                        if let Some(pos) = new_ids.iter().position(|i| *i == id_for_up)
-                            && pos > 0
-                        {
-                            new_ids.swap(pos - 1, pos);
-                            apply_for_up(new_ids);
-                        }
-                    });
-
-                    let ids_for_down = ids.clone();
-                    let id_for_down = id;
-                    let apply_for_down = apply.clone();
-                    down_btn.connect_clicked(move |_| {
-                        let mut new_ids = ids_for_down.clone();
-                        if let Some(pos) = new_ids.iter().position(|i| *i == id_for_down)
-                            && pos + 1 < new_ids.len()
-                        {
-                            new_ids.swap(pos, pos + 1);
-                            apply_for_down(new_ids);
-                        }
-                    });
-
-                    imp.bottom_toolbar_buttons_list.get().append(&row);
-                }
-            }
-        );
-
         let this_for_reset = self.clone();
+
         imp.bottom_toolbar_reset_button.connect_clicked(clone!(
             #[weak]
             penpicker,
@@ -861,23 +698,159 @@ impl RnSettingsPanel {
                     .iter()
                     .map(|s| s.to_string())
                     .collect();
-                let _ = app_settings_reset.set_strv("penpicker-buttons", default_ids.clone());
+                if let Some(settings) = appwindow.app().app_settings() {
+                    let _ = settings.set_strv("penpicker-buttons", default_ids.clone());
+                }
                 penpicker.apply_layout(&default_ids);
                 panel.rebuild_bottom_toolbar_rows(&appwindow);
             }
         ));
 
-        self.imp()
-            .rebuild_bottom_toolbar_rows
-            .replace(Some(Box::new(rebuild_rows)));
         self.rebuild_bottom_toolbar_rows(appwindow);
     }
 
-    /// Invokes the stored row-rebuilding closure, if set.
-    fn rebuild_bottom_toolbar_rows(&self, _appwindow: &RnAppWindow) {
-        let rebuild = self.imp().rebuild_bottom_toolbar_rows.borrow();
-        if let Some(f) = rebuild.as_ref() {
-            f();
+    /// (Re)builds the bottom-toolbar rows from the saved pen picker button
+    /// layout. Called initially and after every change, since each row
+    /// captures the id list it was built from.
+    fn rebuild_bottom_toolbar_rows(&self, appwindow: &RnAppWindow) {
+        let imp = self.imp();
+        let Some(app_settings) = appwindow.app().app_settings() else {
+            return;
+        };
+        let penpicker = appwindow.overlays().penpicker();
+        let this_for_apply = self.clone();
+
+        // Unchecking removes the id from the list; up/down moves it. Both
+        // rewrite gsettings and reapply the layout.
+        let apply = clone!(
+            #[weak(rename_to = panel)]
+            this_for_apply,
+            #[weak]
+            appwindow,
+            #[weak]
+            penpicker,
+            #[upgrade_or_panic]
+            move |new_ids: Vec<String>| {
+                let new_ids = crate::penpicker::sanitize_penpicker_ids(new_ids);
+                if let Some(settings) = appwindow.app().app_settings() {
+                    let _ = settings.set_strv("penpicker-buttons", new_ids.clone());
+                }
+                penpicker.apply_layout(&new_ids);
+                panel.rebuild_bottom_toolbar_rows(&appwindow);
+            }
+        );
+
+        let ids: Vec<String> = app_settings
+            .strv("penpicker-buttons")
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        let ids = crate::penpicker::sanitize_penpicker_ids(ids);
+
+        // Rebuild from scratch: drop previous rows (and their stale
+        // captured ids/callbacks) first.
+        while let Some(child) = imp.bottom_toolbar_buttons_list.get().first_child() {
+            imp.bottom_toolbar_buttons_list.get().remove(&child);
+        }
+
+        // One row per known button, so that an unchecked (hidden)
+        // button keeps its row and can be re-checked. Visible rows
+        // come first in the saved order, hidden ones after.
+        let n = ids.len();
+        let rows: Vec<(&str, Option<usize>)> = crate::penpicker::PENPICKER_BUTTON_IDS
+            .iter()
+            .map(|id| (*id, ids.iter().position(|i| i == id)))
+            .collect();
+        let rows = rows
+            .iter()
+            .filter(|(_, pos)| pos.is_some())
+            .copied()
+            // Visible rows in the saved order; positions are unique.
+            .sorted_by_key(|(_, pos)| *pos)
+            .chain(rows.iter().filter(|(_, pos)| pos.is_none()).copied());
+        for (id, pos) in rows {
+            let Some(widget) = penpicker.widget_for_id(id) else {
+                continue;
+            };
+
+            let row = adw::ActionRow::new();
+            row.set_title(&{
+                let tooltip = widget
+                    .first_child()
+                    .and_then(|c| c.downcast::<gtk4::ToggleButton>().ok())
+                    .map(|t| t.tooltip_text().unwrap_or_default());
+                tooltip.unwrap_or_else(|| glib::GString::from(id))
+            });
+
+            let icon_name = widget.first_child().and_then(|c| {
+                let mut icon = None;
+                let mut it = Some(c);
+                while let Some(w) = it {
+                    if let Some(img) = w.downcast_ref::<gtk4::Image>() {
+                        icon = img.icon_name();
+                        break;
+                    }
+                    it = w.first_child();
+                }
+                icon
+            });
+            if let Some(icon_name) = icon_name {
+                row.add_prefix(&gtk4::Image::from_icon_name(&icon_name));
+            }
+
+            let present = pos.is_some();
+            let check = gtk4::CheckButton::new();
+            check.set_active(present);
+            row.add_suffix(&check);
+
+            let up_btn = gtk4::Button::from_icon_name("dir-up-symbolic");
+            let down_btn = gtk4::Button::from_icon_name("dir-down-symbolic");
+            up_btn.set_valign(gtk4::Align::Center);
+            down_btn.set_valign(gtk4::Align::Center);
+            up_btn.set_sensitive(present && pos.is_some_and(|p| p > 0));
+            down_btn.set_sensitive(present && pos.is_some_and(|p| p + 1 < n));
+            row.add_suffix(&up_btn);
+            row.add_suffix(&down_btn);
+
+            let ids_for_check = ids.clone();
+            let id_for_check = id;
+            let apply_for_check = apply.clone();
+            check.connect_toggled(move |check| {
+                let mut new_ids = ids_for_check.clone();
+                if check.is_active() {
+                    // Re-add at the end.
+                    new_ids.push(id_for_check.to_string());
+                } else {
+                    new_ids.retain(|i| *i != id_for_check);
+                }
+                apply_for_check(new_ids);
+            });
+
+            let ids_for_up = ids.clone();
+            let id_for_up = id;
+            let apply_for_up = apply.clone();
+            up_btn.connect_clicked(move |_| {
+                let mut new_ids = ids_for_up.clone();
+                if let Some(pos) = new_ids.iter().position(|i| *i == id_for_up) && pos > 0 {
+                    new_ids.swap(pos - 1, pos);
+                    apply_for_up(new_ids);
+                }
+            });
+
+            let ids_for_down = ids.clone();
+            let id_for_down = id;
+            let apply_for_down = apply.clone();
+            down_btn.connect_clicked(move |_| {
+                let mut new_ids = ids_for_down.clone();
+                if let Some(pos) = new_ids.iter().position(|i| *i == id_for_down)
+                    && pos + 1 < new_ids.len()
+                {
+                    new_ids.swap(pos, pos + 1);
+                    apply_for_down(new_ids);
+                }
+            });
+
+            imp.bottom_toolbar_buttons_list.get().append(&row);
         }
     }
 
@@ -1673,8 +1646,7 @@ impl RnSettingsPanel {
                     }
                     let binding = rnote_compose::penevent::KeyBinding {
                         keyval: rnote_engine::pens::shortcuts::LEGACY_CTRL_SPACE_KEYVAL,
-                        modifiers: rnote_compose::penevent::KeyBinding::MODIFIER_MASK
-                            & gdk::ModifierType::CONTROL_MASK.bits(),
+                        modifiers: rnote_engine::pens::shortcuts::LEGACY_CTRL_SPACE_MODIFIERS,
                     };
                     pens_config.register_shortcut(
                         ShortcutKey::KeyboardCustom(binding),

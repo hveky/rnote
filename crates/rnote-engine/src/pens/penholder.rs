@@ -332,18 +332,20 @@ impl PenHolder {
     ) -> Option<(EventPropagation, WidgetFlags)> {
         let target = KeyBinding { keyval, modifiers }.normalized();
 
-        engine_view
+        let matched_key = engine_view
             .config
             .pens_config
-            .list_current_shortcuts()
-            .into_iter()
+            .shortcuts
+            .iter()
             .find(|(k, _)| {
                 matches!(
                     k,
                     ShortcutKey::KeyboardCustom(b) if b.normalized() == target
                 )
             })
-            .map(|(key, _)| self.handle_pressed_shortcut_key(key, now, engine_view))
+            .map(|(key, _)| *key);
+
+        matched_key.map(|key| self.handle_pressed_shortcut_key(key, now, engine_view))
     }
 
     /// Fetch clipboard content from the current pen.

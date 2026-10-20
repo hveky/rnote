@@ -47,14 +47,30 @@ impl DerefMut for ShortcutShapeBuilderListModel {
     }
 }
 
-pub(crate) fn shape_builder_label(builder: ShapeBuilderType) -> String {
+/// The single source of translated shape builder display names, shared by
+/// the shaper sidebar picker and the shortcut settings dropdowns.
+pub(crate) fn shape_builder_display_name(builder: ShapeBuilderType) -> String {
     match builder {
         ShapeBuilderType::Line => gettext("Line"),
         ShapeBuilderType::Arrow => gettext("Arrow"),
         ShapeBuilderType::Rectangle => gettext("Rectangle"),
+        ShapeBuilderType::Grid => gettext("Grid"),
+        ShapeBuilderType::CoordSystem2D => gettext("2D coordinate system"),
+        ShapeBuilderType::CoordSystem3D => gettext("3D coordinate system"),
+        ShapeBuilderType::QuadrantCoordSystem2D => {
+            gettext("2D single quadrant coordinate system")
+        }
         ShapeBuilderType::Ellipse => gettext("Ellipse"),
-        _ => format!("{builder:?}"),
+        ShapeBuilderType::FociEllipse => gettext("Ellipse with foci"),
+        ShapeBuilderType::QuadBez => gettext("Quadratic bezier curve"),
+        ShapeBuilderType::CubBez => gettext("Cubic bezier curve"),
+        ShapeBuilderType::Polyline => gettext("Polyline"),
+        ShapeBuilderType::Polygon => gettext("Polygon"),
     }
+}
+
+pub(crate) fn shape_builder_label(builder: ShapeBuilderType) -> String {
+    shape_builder_display_name(builder)
 }
 
 /// Returns the dropdown position for a builder type, if it is selectable.
