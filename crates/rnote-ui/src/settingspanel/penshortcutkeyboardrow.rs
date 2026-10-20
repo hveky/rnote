@@ -129,11 +129,30 @@ mod imp {
                     obj,
                     move |_| {
                         let new_style = row.pen_style();
-                        match &mut *row.imp().action.borrow_mut() {
-                            ShortcutAction::ChangePenStyle { style, .. }
-                            | ShortcutAction::SwitchPenStyle { style, .. } => {
-                                *style = new_style;
+                        let new_mode = row.shortcut_mode();
+                        // Selecting the shaper upgrades the action to
+                        // `SwitchPenStyle` so a concrete shape builder can be
+                        // chosen, like the preset R/O/A/L shortcuts. Selecting
+                        // any other style downgrades back to `ChangePenStyle`.
+                        match *row.imp().action.borrow() {
+                            ShortcutAction::SwitchPenStyle { mode, .. }
+                                if new_style != PenStyle::Shaper =>
+                            {
+                                row.imp().action.replace(ShortcutAction::ChangePenStyle {
+                                    style: new_style,
+                                    mode,
+                                });
                             }
+                            ShortcutAction::ChangePenStyle { .. }
+                                if new_style == PenStyle::Shaper =>
+                            {
+                                row.imp().action.replace(ShortcutAction::SwitchPenStyle {
+                                    style: PenStyle::Shaper,
+                                    shape_builder: Some(ShapeBuilderType::Line),
+                                    mode: new_mode,
+                                });
+                            }
+                            _ => {}
                         }
                         row.update_shape_builder_dropdown();
                         row.emit_by_name::<()>("row-changed", &[]);

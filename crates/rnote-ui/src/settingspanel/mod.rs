@@ -622,8 +622,11 @@ impl RnSettingsPanel {
                     }
                 }
 
-                if row.keybinding_button().binding().is_none() {
-                    // Binding cleared via backspace: drop the row.
+                if old_binding.is_some() && row.keybinding_button().binding().is_none() {
+                    // An existing binding was explicitly cleared via
+                    // backspace: drop the row. A brand-new row without a
+                    // binding yet must survive so the user can keep editing
+                    // it.
                     list.remove(&row);
                 }
                 None

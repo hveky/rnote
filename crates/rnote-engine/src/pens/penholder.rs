@@ -297,7 +297,10 @@ impl PenHolder {
                         shortcut_key,
                         engine_view,
                     );
-                    if style == PenStyle::Shaper
+                    // A disabled shortcut must not touch the shaper
+                    // configuration either.
+                    if mode != ShortcutMode::Disabled
+                        && style == PenStyle::Shaper
                         && let Some(builder) = shape_builder
                     {
                         engine_view.config.pens_config.shaper_config.builder_type = builder;
